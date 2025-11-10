@@ -2,19 +2,19 @@
   "name": "Enhanced Swing Analyzer",
   "short_name": "ESA",
   "description": "A hybrid offline-first + Firebase-powered swing analysis tool by Biplab Bawali.",
-  "start_url": ".",
+  "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#071028",
   "theme_color": "#1e3c72",
   "orientation": "portrait",
   "icons": [
     {
-      "src": "icon-192.png",
+      "src": "./icon-192.png",
       "sizes": "192x192",
       "type": "image/png"
     },
     {
-      "src": "icon-512.png",
+      "src": "./icon-512.png",
       "sizes": "512x512",
       "type": "image/png"
     }
