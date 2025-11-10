@@ -323,10 +323,17 @@ body{margin:0;font-family:Inter,Segoe UI,Arial;background:linear-gradient(180deg
     if(auth && auth.currentUser) window.esaCloud.flushSyncQueue(auth.currentUser.uid).catch(()=>{});
   });
 })();
+<link rel="manifest" href="manifest.json">
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('service-worker.js')
+      .then(reg => console.log('Service Worker registered ✅'))
+      .catch(err => console.warn('Service Worker failed ❌', err));
+  });
+}
 </script>
 
-<!-- SERVICE WORKER + MANIFEST: generated at runtime so you can deploy single-file to GH Pages without extra files -->
-<script>
 // Create manifest.json as blob and attach to head so Add-to-Home works even without separate manifest file
 (function(){
   const manifest = {
