@@ -3,21 +3,17 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Enhanced Swing Analyzer v12.0 – Curated by BIPLAB BAWALI</title>
+<title>Enhanced Swing Analyzer – Curated by BIPLAB BAWALI</title>
 <meta name="theme-color" content="#1e3c72">
 <link rel="icon" href="icon-192.png">
 <link rel="manifest" href="manifest.json">
 
 <!-- Firebase & App (module) -->
 <script type="module">
-  // Firebase modular SDK (browser) - using CDN modules
   import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js';
   import { getAuth, signInAnonymously, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js';
-  import { getFirestore, collection, addDoc, getDocs, query, orderBy } from 'https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js';
+  import { getFirestore, collection, addDoc, getDocs, query, orderBy, limit, doc, setDoc, getDoc } from 'https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js';
 
-  // ------------------
-  // Your Firebase config (provided, corrected)
-  // ------------------
   const firebaseConfig = {
     apiKey: "AIzaSyAAGdLNN73Eq3MXGk00cqgSPw6t5KgY3Zk",
     authDomain: "enhanced-swing-analyzer.firebaseapp.com",
@@ -27,81 +23,212 @@
     appId: "1:1091700626043:web:3bd01af48ad0ef55f408de"
   };
 
-  // Initialize Firebase
   const app = initializeApp(firebaseConfig);
   const auth = getAuth(app);
   const db = getFirestore(app);
 
-  // Expose for non-module scripts later
   window._esa_firebase = { app, auth, db };
 
-  // Simple anonymous sign-in
-  async function signIn() {
-    try {
-      const userCred = await signInAnonymously(auth);
-      console.log('Signed in anonymously as', userCred.user.uid);
-      return userCred.user;
-    } catch (e) {
-      console.warn('Anonymous sign-in failed', e);
-      return null;
+  // Sync status indicator
+  let syncStatusElement;
+  function updateSyncStatus(status, message) {
+    if (!syncStatusElement) {
+      syncStatusElement = document.getElementById('syncStatus');
+    }
+    if (syncStatusElement) {
+      syncStatusElement.textContent = message || status;
+      syncStatusElement.style.color = status === 'synced' ? '#16a34a' : 
+                                       status === 'syncing' ? '#f59e0b' : '#dc2626';
     }
   }
 
-  // Hybrid sync queue (local queue stored in localStorage)
+  // Enhanced sync queue with timestamps
   const SYNC_QUEUE_KEY = 'esa_sync_queue_v12';
+  const LAST_SYNC_KEY = 'esa_last_sync_v12';
+
   function enqueueForSync(col, docObj) {
     try {
       const q = JSON.parse(localStorage.getItem(SYNC_QUEUE_KEY) || '[]');
-      q.push({col, docObj, ts: Date.now()});
+      q.push({col, docObj, ts: Date.now(), id: Date.now() + '_' + Math.random().toString(36).substr(2, 9)});
       localStorage.setItem(SYNC_QUEUE_KEY, JSON.stringify(q));
+      console.log('📝 Enqueued for sync:', col, docObj);
     } catch (e) { console.warn('enqueueForSync', e); }
   }
 
   async function flushSyncQueue(uid) {
+    if (!navigator.onLine) {
+      console.log('⚠️ Offline - sync queued');
+      updateSyncStatus('offline', '⚠️ Offline - changes queued');
+      return;
+    }
+
     try {
+      updateSyncStatus('syncing', '🔄 Syncing...');
       const raw = localStorage.getItem(SYNC_QUEUE_KEY);
-      if(!raw) return;
-      const q = JSON.parse(raw || '[]');
-      if(!q.length) return;
-      for(const item of q){
-        try{
-          const pathCol = `users/${uid}/${item.col}`;
-          // store with server-generated id under user's subcollection
-          await addDoc(collection(db, pathCol), item.docObj);
-        }catch(e){ console.warn('flush item failed', e); }
+      if (!raw) {
+        updateSyncStatus('synced', '✅ Synced');
+        return;
       }
+      
+      const q = JSON.parse(raw || '[]');
+      if (!q.length) {
+        updateSyncStatus('synced', '✅ Synced');
+        return;
+      }
+
+      console.log(`📤 Flushing ${q.length} items to cloud...`);
+      
+      for (const item of q) {
+        try {
+          const pathCol = `users/${uid}/${item.col}`;
+          await addDoc(collection(db, pathCol), {...item.docObj, syncedAt: Date.now()});
+          console.log('✅ Synced:', item.col, item.docObj.symbol || item.docObj.list);
+        } catch (e) { 
+          console.warn('⚠️ Sync item failed:', e); 
+        }
+      }
+      
       localStorage.removeItem(SYNC_QUEUE_KEY);
-    } catch(e){ console.warn('flushSyncQueue', e); }
+      localStorage.setItem(LAST_SYNC_KEY, Date.now().toString());
+      updateSyncStatus('synced', '✅ Synced');
+      console.log('✅ Sync complete');
+      
+      // Trigger UI refresh after sync
+      if (window.renderSavedHistory) window.renderSavedHistory();
+      if (window.renderWatchlist) window.renderWatchlist();
+      
+    } catch(e) { 
+      console.warn('flushSyncQueue error:', e); 
+      updateSyncStatus('error', '❌ Sync failed');
+    }
   }
 
-  // Fetch cloud records for a user
+  // Fetch cloud records with deduplication
   async function fetchCloudList(uid, col) {
-    try{
+    if (!navigator.onLine) {
+      console.log('⚠️ Offline - using local data');
+      return [];
+    }
+    
+    try {
       const pathCol = `users/${uid}/${col}`;
-      const q = query(collection(db, pathCol), orderBy('ts','desc'));
+      const q = query(collection(db, pathCol), orderBy('ts', 'desc'), limit(500));
       const snap = await getDocs(q);
-      return snap.docs.map(d => d.data());
-    }catch(e){ console.warn('fetchCloudList', e); return []; }
+      const data = snap.docs.map(d => ({id: d.id, ...d.data()}));
+      console.log(`📥 Fetched ${data.length} ${col} records from cloud`);
+      return data;
+    } catch(e) { 
+      console.warn('fetchCloudList error:', e); 
+      return []; 
+    }
   }
 
-  // Public API for the page (hybrid)
+  // Fetch and merge watchlist
+  async function fetchWatchlist(uid) {
+    if (!navigator.onLine) return [];
+    
+    try {
+      const docRef = doc(db, `users/${uid}/settings/watchlist`);
+      const docSnap = await getDoc(docRef);
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        console.log('📥 Fetched watchlist from cloud:', data.list);
+        return data.list || [];
+      }
+      return [];
+    } catch(e) {
+      console.warn('fetchWatchlist error:', e);
+      return [];
+    }
+  }
+
+  // Save watchlist to cloud
+  async function saveWatchlistToCloud(uid, list) {
+    if (!navigator.onLine) {
+      enqueueForSync('watchlist', {list, ts: Date.now()});
+      return;
+    }
+    
+    try {
+      const docRef = doc(db, `users/${uid}/settings/watchlist`);
+      await setDoc(docRef, {list, ts: Date.now(), syncedAt: Date.now()});
+      console.log('✅ Watchlist saved to cloud');
+      localStorage.setItem(LAST_SYNC_KEY, Date.now().toString());
+    } catch(e) {
+      console.warn('saveWatchlistToCloud error:', e);
+      enqueueForSync('watchlist', {list, ts: Date.now()});
+    }
+  }
+
   window.esaCloud = {
-    signIn,
+    signIn: async () => {
+      try {
+        const userCred = await signInAnonymously(auth);
+        console.log('🔐 Signed in:', userCred.user.uid);
+        return userCred.user;
+      } catch (e) {
+        console.warn('Sign-in failed:', e);
+        return null;
+      }
+    },
     flushSyncQueue,
     enqueueForSync,
-    fetchCloudList
+    fetchCloudList,
+    fetchWatchlist,
+    saveWatchlistToCloud
   };
 
-  // Auto sign-in on load and attempt to flush queue when signed in
-  onAuthStateChanged(auth, (user) => {
-    if(user){
-      console.log('Auth state: signed in', user.uid);
-      // attempt to flush queue
-      flushSyncQueue(user.uid);
+  // Auto sign-in and sync on load
+  onAuthStateChanged(auth, async (user) => {
+    if (user) {
+      console.log('🔐 Auth state: signed in', user.uid);
+      updateSyncStatus('syncing', '🔄 Syncing...');
+      
+      // Initial sync on load
+      await flushSyncQueue(user.uid);
+      
+      // Fetch and merge cloud data
+      if (window.getSavedHistoryHybrid) {
+        await window.getSavedHistoryHybrid();
+      }
+      if (window.getWatchlistHybrid) {
+        await window.getWatchlistHybrid();
+      }
+      
+      updateSyncStatus('synced', '✅ Synced');
     } else {
-      // try sign in
-      signIn().then(u=>{ if(u) flushSyncQueue(u.uid); });
+      console.log('🔓 Not signed in, attempting...');
+      updateSyncStatus('syncing', '🔄 Connecting...');
+      const u = await window.esaCloud.signIn();
+      if (u) {
+        await flushSyncQueue(u.uid);
+        updateSyncStatus('synced', '✅ Synced');
+      } else {
+        updateSyncStatus('offline', '⚠️ Offline mode');
+      }
     }
+  });
+
+  // Periodic sync every 30 seconds
+  setInterval(async () => {
+    const auth = window._esa_firebase?.auth;
+    if (auth?.currentUser && navigator.onLine) {
+      await flushSyncQueue(auth.currentUser.uid);
+    }
+  }, 30000);
+
+  // Sync on coming back online
+  window.addEventListener('online', async () => {
+    console.log('🌐 Back online - syncing...');
+    const auth = window._esa_firebase?.auth;
+    if (auth?.currentUser) {
+      await flushSyncQueue(auth.currentUser.uid);
+    }
+  });
+
+  window.addEventListener('offline', () => {
+    console.log('📴 Offline - changes will be queued');
+    updateSyncStatus('offline', '⚠️ Offline - changes queued');
   });
 </script>
 
@@ -203,7 +330,6 @@ button.ghost{background:transparent;border:1px solid #e6eef8;color:#071026}
 button.ghost, button.primary{transition:opacity .2s ease}
 button.disabled{opacity:0.45;pointer-events:none}
 
-/* Enhanced mobile responsiveness */
 @media(max-width:980px){
   .result{grid-template-columns:1fr}
   .indicator-grid{grid-template-columns:1fr}
@@ -239,11 +365,10 @@ button.disabled{opacity:0.45;pointer-events:none}
   <div class="panel">
     <div class="header-row">
       <div>
-        <h1 class="title">🎯 Enhanced Swing Analyzer – v12.0 (Hybrid)</h1>
+        <h1 class="title">🎯 Enhanced Swing Analyzer </h1>
         <p class="subtitle">Curated by BIPLAB BAWALI</p>
       </div>
       <div style="flex:1"></div>
-      <div class="chip" id="brandingChip">Curated By - BIPLAB BAWALI</div>
     </div>
 
     <div id="learnPanel" class="learn-panel" aria-hidden="true">
@@ -286,13 +411,14 @@ button.disabled{opacity:0.45;pointer-events:none}
       <button id="toggleLearn" class="ghost">📘 Learn</button>
       <label style="display:flex;align-items:center;gap:6px"><input id="saveHistoryToggle" type="checkbox"> Save to History</label>
       <button id="exportPdfBtn" class="ghost">📄 Export PDF</button>
-      <button id="exportCsvBtn" class="ghost">⬇ Export CSV</button>
+      <button id="syncNowBtn" class="ghost">🔄 Sync Now</button>
     </div>
 
     <div class="meta">
       <div class="chip" id="status">Ready</div>
+      <div class="chip" id="syncStatus">🔄 Initializing...</div>
       <div style="flex:1"></div>
-      <div style="font-size:13px;color:var(--muted)">AI Explain Mode: Auto • History is hybrid (local + cloud)</div>
+      <div style="font-size:13px;color:var(--muted)">Cloud Sync Active • Cross-Device</div>
     </div>
 
     <div id="outputArea" class="result" style="display:none">
@@ -346,30 +472,31 @@ button.disabled{opacity:0.45;pointer-events:none}
 
     <div class="history-section">
       <div class="history-header">
-        <div class="label">Search History (Saved)</div>
+        <div class="label">Search History (Cloud Synced)</div>
         <div>
           <button id="clearHistoryBtn" class="ghost">🧹 Clear History</button>
-          <button id="exportHistoryCsvBtn" class="ghost">⬇ Export CSV</button>
+          <button id="refreshHistoryBtn" class="ghost">🔄 Refresh</button>
         </div>
       </div>
-      <div id="historyList" class="history-list"><div style="color:#9ca3af;font-style:italic;">No saved analyses yet</div></div>
+      <div id="historyList" class="history-list"><div style="color:#9ca3af;font-style:italic;">Loading...</div></div>
     </div>
 
     <div class="history-section" style="margin-top:12px">
       <div class="history-header">
-        <div class="label">Watchlist</div>
-        <div><button id="clearWatchBtn" class="ghost">Clear Watchlist</button></div>
+        <div class="label">Watchlist (Cloud Synced)</div>
+        <div>
+          <button id="clearWatchBtn" class="ghost">Clear Watchlist</button>
+          <button id="refreshWatchBtn" class="ghost">🔄 Refresh</button>
+        </div>
       </div>
-      <div id="watchlist" class="history-list"><div style="color:#9ca3af;font-style:italic;">No stocks added yet</div></div>
+      <div id="watchlist" class="history-list"><div style="color:#9ca3af;font-style:italic;">Loading...</div></div>
     </div>
 
-    <div class="footer">© 2025 BIPLAB BAWALI – Enhanced Swing Analyzer v12.0</div>
+    <div class="footer">© 2025 BIPLAB BAWALI – Enhanced Swing Analyzer v12.1</div>
   </div>
 
 <script>
-/* ---------------------------
-   Utilities & Fetch (same as v11)
-   --------------------------- */
+// [Include all the indicator functions and analysis logic from the original - unchanged]
 function allorigins(url) {
   return "https://dawn-recipe-ee4e.titir95biplab.workers.dev/?url=" + encodeURIComponent(url);
 }
@@ -382,10 +509,9 @@ async function fetchYahoo(symbol, interval='1d', range='6mo'){
   if(!res.ok) throw new Error('Network error: ' + res.status);
   let txt = await res.text();
   if (txt.startsWith('<') || txt.startsWith('Edge')) {
-    throw new Error('Proxy returned invalid response:\n' + txt.slice(0,80));
+    throw new Error('Proxy returned invalid response');
   }
   const j = JSON.parse(txt);
-
   if(!j.chart || !j.chart.result || !j.chart.result[0]) throw new Error('No data returned');
   const result = j.chart.result[0];
   const quote = result.indicators?.quote?.[0];
@@ -400,9 +526,6 @@ async function fetchYahoo(symbol, interval='1d', range='6mo'){
   return { closes, highs, lows, volumes, meta: result.meta || {} };
 }
 
-/* ---------------------------
-   Indicators
-   --------------------------- */
 function EMA(series, period){ if(!series||series.length<period) return null; const k=2/(period+1); const ema=[series[0]]; for(let i=1;i<series.length;i++) ema.push(series[i]*k + ema[i-1]*(1-k)); return ema[ema.length-1]; }
 function RSI(series, period=14){ if(!series||series.length<=period) return null; let gains=0,losses=0; for(let i=1;i<=period;i++){ const ch=series[i]-series[i-1]; if(ch>0) gains+=ch; else losses+=Math.abs(ch); } let avgG=gains/period, avgL=losses/period; for(let i=period+1;i<series.length;i++){ const ch=series[i]-series[i-1]; if(ch>0){ avgG=(avgG*(period-1)+ch)/period; avgL=(avgL*(period-1))/period; } else { avgG=(avgG*(period-1))/period; avgL=(avgL*(period-1)+Math.abs(ch))/period; } } if(avgL===0) return 100; const rs=avgG/avgL; return 100-(100/(1+rs)); }
 function SMA(arr,period){ if(!arr||arr.length<period) return null; const sl=arr.slice(-period); return sl.reduce((a,b)=>a+b,0)/period; }
@@ -413,198 +536,125 @@ function MACD(series,short=12,long=26,signal=9){ if(!series||series.length<long+
 function Supertrend(highs,lows,closes,period=10,mult=3){ if(!closes||closes.length<period+1) return null; const atr=ATR(highs,lows,closes,period); if(!atr) return null; const hl2=(highs[highs.length-1]+lows[lows.length-1])/2; const upper=hl2+mult*atr, lower=hl2-mult*atr; const price=closes[closes.length-1]; return {upper, lower, trend: price>lower?'bullish':'bearish', value: price>lower?lower:upper}; }
 function analyzeVolume(volumes,period=20){ if(!volumes||volumes.length<period) return null; const recent=volumes.slice(-period); const avg=recent.reduce((a,b)=>a+b,0)/period; const cur=volumes[volumes.length-1]; const prev=volumes[volumes.length-2]||cur; return {avgVolume:avg,currentVolume:cur,volumeTrend:cur>avg?'above-average':'below-average',volumeChange:((cur-prev)/Math.max(1,prev)*100).toFixed(2)}; }
 
-/* ---------------------------
-   Support & Resistance Detection
-   --------------------------- */
 function findSupportResistance(closes, highs, lows, period = 20) {
   if(!closes || closes.length < period) return {support: null, resistance: null};
-  
   const recent = closes.slice(-period);
   const recentHighs = highs.slice(-period);
   const recentLows = lows.slice(-period);
-  
   const pivotHighs = [], pivotLows = [];
-  
   for(let i = 2; i < recent.length - 2; i++) {
     if(recentHighs[i] > recentHighs[i-1] && recentHighs[i] > recentHighs[i-2] &&
        recentHighs[i] > recentHighs[i+1] && recentHighs[i] > recentHighs[i+2]) {
       pivotHighs.push(recentHighs[i]);
     }
-    
     if(recentLows[i] < recentLows[i-1] && recentLows[i] < recentLows[i-2] &&
        recentLows[i] < recentLows[i+1] && recentLows[i] < recentLows[i+2]) {
       pivotLows.push(recentLows[i]);
     }
   }
-  
-  const resistance = pivotHighs.length > 0 ? 
-    pivotHighs.reduce((a,b) => a+b, 0) / pivotHighs.length : null;
-  const support = pivotLows.length > 0 ? 
-    pivotLows.reduce((a,b) => a+b, 0) / pivotLows.length : null;
-  
+  const resistance = pivotHighs.length > 0 ? pivotHighs.reduce((a,b) => a+b, 0) / pivotHighs.length : null;
+  const support = pivotLows.length > 0 ? pivotLows.reduce((a,b) => a+b, 0) / pivotLows.length : null;
   return { support, resistance, pivotHighs, pivotLows };
 }
 
-/* ---------------------------
-   Confluence Calculator
-   --------------------------- */
 function calculateConfluence(ctx) {
   let bullishCount = 0, bearishCount = 0;
-  
   if(ctx.rsi !== null && ctx.rsi < 30) bullishCount++;
   if(ctx.rsi !== null && ctx.rsi > 70) bearishCount++;
-  
   if(ctx.ema50 !== null && ctx.ema200 !== null) {
     if(ctx.ema50 > ctx.ema200) bullishCount++;
     if(ctx.ema50 < ctx.ema200) bearishCount++;
   }
-  
   if(ctx.macdHist !== null) {
     if(ctx.macdHist > 0) bullishCount++;
     if(ctx.macdHist < 0) bearishCount++;
   }
-  
   if(ctx.supertrend?.trend === 'bullish') bullishCount++;
   if(ctx.supertrend?.trend === 'bearish') bearishCount++;
-  
   if(ctx.vwap && ctx.price) {
     if(ctx.price > ctx.vwap) bullishCount++;
     if(ctx.price < ctx.vwap) bearishCount++;
   }
-  
   if(ctx.weeklyBull === true) bullishCount++;
   if(ctx.weeklyBull === false) bearishCount++;
-  
   const totalSignals = 6;
   const agreement = Math.max(bullishCount, bearishCount) / totalSignals;
-  
-  return {
-    confluence: agreement,
-    direction: bullishCount > bearishCount ? 'bullish' : 'bearish',
-    bullishCount,
-    bearishCount
-  };
+  return {confluence: agreement, direction: bullishCount > bearishCount ? 'bullish' : 'bearish', bullishCount, bearishCount};
 }
 
-/* ---------------------------
-   Pattern detection with S/R
-   --------------------------- */
 function detectPatterns(closes, highs, lows){
   if(!closes||closes.length<20) return "Not enough data for pattern detection.";
   const price = closes[closes.length-1];
   const prev = closes.slice(-10);
   const messages=[];
-  
   const max1 = Math.max(...prev.slice(0,5));
   const max2 = Math.max(...prev.slice(5));
   const min1 = Math.min(...prev.slice(0,5));
   const min2 = Math.min(...prev.slice(5));
-  
-  if(Math.abs(max1-max2)/Math.max(1,max1) < 0.02 && price < Math.min(max1,max2)) 
-    messages.push("⚠️ Possible Double Top – bearish reversal");
-  if(Math.abs(min1-min2)/Math.max(1,min1) < 0.02 && price > Math.max(min1,min2)) 
-    messages.push("💎 Possible Double Bottom – bullish reversal");
-  
+  if(Math.abs(max1-max2)/Math.max(1,max1) < 0.02 && price < Math.min(max1,max2)) messages.push("⚠️ Possible Double Top – bearish reversal");
+  if(Math.abs(min1-min2)/Math.max(1,min1) < 0.02 && price > Math.max(min1,min2)) messages.push("💎 Possible Double Bottom – bullish reversal");
   const trendHigh = highs[highs.length-1] - highs[Math.max(0, highs.length-5)];
   const trendLow = lows[lows.length-1] - lows[Math.max(0, lows.length-5)];
-  if(trendHigh<0 && trendLow>0) 
-    messages.push("🔺 Contracting range – potential triangle breakout");
-  
+  if(trendHigh<0 && trendLow>0) messages.push("🔺 Contracting range – potential triangle breakout");
   const recentHigh = Math.max(...prev);
   const recentLow = Math.min(...prev);
-  if(price>recentHigh) 
-    messages.push("🚀 Breakout above recent resistance – bullish continuation");
-  if(price<recentLow) 
-    messages.push("📉 Breakdown below recent support – bearish continuation");
-  
-  // Support/Resistance analysis
+  if(price>recentHigh) messages.push("🚀 Breakout above recent resistance – bullish continuation");
+  if(price<recentLow) messages.push("📉 Breakdown below recent support – bearish continuation");
   const sr = findSupportResistance(closes, highs, lows, 30);
   if(sr.support !== null) {
     const distToSupport = ((price - sr.support) / price * 100);
-    if(Math.abs(distToSupport) < 2) {
-      messages.push(`📍 Price near support level ₹${sr.support.toFixed(2)} (${distToSupport.toFixed(1)}%)`);
-    }
+    if(Math.abs(distToSupport) < 2) messages.push(`🔍 Price near support level ₹${sr.support.toFixed(2)} (${distToSupport.toFixed(1)}%)`);
   }
   if(sr.resistance !== null) {
     const distToResistance = ((price - sr.resistance) / price * 100);
-    if(Math.abs(distToResistance) < 2) {
-      messages.push(`📍 Price near resistance level ₹${sr.resistance.toFixed(2)} (${distToResistance.toFixed(1)}%)`);
-    }
+    if(Math.abs(distToResistance) < 2) messages.push(`🔍 Price near resistance level ₹${sr.resistance.toFixed(2)} (${distToResistance.toFixed(1)}%)`);
   }
-  
-  // Head and Shoulders (simplified)
   if(prev.length >= 9) {
     const leftShoulder = Math.max(...prev.slice(0,3));
     const head = Math.max(...prev.slice(3,6));
     const rightShoulder = Math.max(...prev.slice(6,9));
-    
-    if(head > leftShoulder * 1.02 && head > rightShoulder * 1.02 &&
-       Math.abs(leftShoulder - rightShoulder) / leftShoulder < 0.03) {
+    if(head > leftShoulder * 1.02 && head > rightShoulder * 1.02 && Math.abs(leftShoulder - rightShoulder) / leftShoulder < 0.03) {
       messages.push("👤 Potential Head & Shoulders pattern - bearish reversal");
     }
   }
-  
   return messages.length? messages.join("<br>") : "No significant pattern detected.";
 }
 
-/* ---------------------------
-   Scoring & Decision with Dynamic Weighting
-   --------------------------- */
 function computeScoreAndDecision(ctx){
   let score=50; const signals=[];
-  
-  // Dynamic weights based on volatility regime
-  const volatilityMultiplier = ctx.atr && ctx.price ? 
-    (ctx.atr / ctx.price > 0.03 ? 0.8 : 1.2) : 1;
-  
-  const w={
-    trend: Math.round(20 * volatilityMultiplier),
-    momentum: 15,
-    rsi: 15,
-    volatility: 12,
-    support: 10,
-    volume: Math.round(8 * (ctx.volume?.volumeTrend === 'above-average' ? 1.5 : 1)),
-    vwap: 7,
-    weekly: Math.round(13 * volatilityMultiplier)
-  };
-  
+  const volatilityMultiplier = ctx.atr && ctx.price ? (ctx.atr / ctx.price > 0.03 ? 0.8 : 1.2) : 1;
+  const w={trend: Math.round(20 * volatilityMultiplier), momentum: 15, rsi: 15, volatility: 12, support: 10, volume: Math.round(8 * (ctx.volume?.volumeTrend === 'above-average' ? 1.5 : 1)), vwap: 7, weekly: Math.round(13 * volatilityMultiplier)};
   if(ctx.ema50!==null && ctx.ema200!==null){
     if(ctx.ema50>ctx.ema200*1.01){ score+=w.trend; signals.push({text:'EMA50 > EMA200 (Bullish structure)',type:'bullish',strength:'strong'}); }
     else if(ctx.ema50<ctx.ema200*0.99){ score-=w.trend; signals.push({text:'EMA50 < EMA200 (Bearish structure)',type:'bearish',strength:'strong'}); }
     else signals.push({text:'EMA50 ≈ EMA200 (Consolidation)',type:'neutral',strength:'weak'});
   }
-  
   if(ctx.rsi!==null){
     if(ctx.rsi<30){ score+=w.rsi; signals.push({text:`RSI ${ctx.rsi.toFixed(1)} (Oversold)`,type:'bullish',strength:'strong'}); }
     else if(ctx.rsi>70){ score-=w.rsi; signals.push({text:`RSI ${ctx.rsi.toFixed(1)} (Overbought)`,type:'bearish',strength:'strong'}); }
     else if(ctx.rsi>50){ score+=3; signals.push({text:`RSI ${ctx.rsi.toFixed(1)} (Bullish zone)`,type:'bullish',strength:'weak'}); }
     else { score-=3; signals.push({text:`RSI ${ctx.rsi.toFixed(1)} (Bearish zone)`,type:'bearish',strength:'weak'}); }
   }
-  
   if(ctx.macdHist!==null){
     const s = Math.abs(ctx.macdHist)>5?'strong':'moderate';
     if(ctx.macdHist>0){ score+=w.momentum*(s==='strong'?1:0.6); signals.push({text:'MACD histogram positive',type:'bullish',strength:s}); }
     else { score-=w.momentum*(s==='strong'?1:0.6); signals.push({text:'MACD histogram negative',type:'bearish',strength:s}); }
   }
-  
   if(ctx.bb!==null && ctx.price!==null){
     if(ctx.price<ctx.bb.lower){ score+=w.volatility; signals.push({text:'Price below lower BB (Mean reversion)',type:'bullish',strength:'moderate'}); }
     else if(ctx.price>ctx.bb.upper){ score-=w.volatility; signals.push({text:'Price above upper BB (Over-extension)',type:'bearish',strength:'moderate'}); }
     else signals.push({text:'Price within BB range',type:'neutral',strength:'weak'});
   }
-  
   if(ctx.supertrend!==null){
     if(ctx.supertrend.trend==='bullish'){ score+=w.support; signals.push({text:'Supertrend bullish',type:'bullish',strength:'moderate'}); }
     else { score-=w.support; signals.push({text:'Supertrend bearish',type:'bearish',strength:'moderate'}); }
   }
-  
   if(ctx.vwap!==null && ctx.price!==null){
     const diff=((ctx.price-ctx.vwap)/ctx.vwap*100);
     if(diff>1){ score+=w.vwap; signals.push({text:`Price ${diff.toFixed(1)}% above VWAP`,type:'bullish',strength:'weak'}); }
     else if(diff<-1){ score-=w.vwap; signals.push({text:`Price ${Math.abs(diff).toFixed(1)}% below VWAP`,type:'bearish',strength:'weak'}); }
     else signals.push({text:'Price near VWAP',type:'neutral',strength:'weak'});
   }
-  
   if(ctx.volume!==null){
     if(ctx.volume.volumeTrend==='above-average'){ 
       if(score>50) score+=w.volume; 
@@ -613,30 +663,21 @@ function computeScoreAndDecision(ctx){
     }
     else { signals.push({text:'Volume below average',type:'neutral',strength:'weak'}); score*=0.95; }
   }
-  
   if(ctx.weeklyBull!==null){ 
     if(ctx.weeklyBull===true){ score+=w.weekly; signals.push({text:'Weekly trend bullish',type:'bullish',strength:'strong'}); } 
     else { score-=w.weekly; signals.push({text:'Weekly trend bearish',type:'bearish',strength:'strong'}); } 
   }
-
   if(ctx.patternBias && typeof ctx.patternBias==='number' && ctx.patternBias!==0){
     score += ctx.patternBias;
     signals.push({text:`Pattern bias ${ctx.patternBias>0?'+':''}${ctx.patternBias}`, type: ctx.patternBias>0?'bullish':'bearish', strength:'moderate'});
   }
-  
-  // Confluence scoring
   const confluence = calculateConfluence(ctx);
   if(confluence.confluence > 0.66) {
     const boost = 5;
     if(confluence.direction === 'bullish' && score > 50) score += boost;
     if(confluence.direction === 'bearish' && score < 50) score -= boost;
-    signals.push({
-      text: `High confluence: ${confluence.bullishCount} bullish vs ${confluence.bearishCount} bearish signals`,
-      type: confluence.direction,
-      strength: 'strong'
-    });
+    signals.push({text: `High confluence: ${confluence.bullishCount} bullish vs ${confluence.bearishCount} bearish signals`, type: confluence.direction, strength: 'strong'});
   }
-
   score = Math.max(0, Math.min(100, Math.round(score)));
   let decisionLabel = 'HOLD';
   if(score>=75) decisionLabel='STRONG BUY';
@@ -644,152 +685,137 @@ function computeScoreAndDecision(ctx){
   else if(score<=25) decisionLabel='STRONG SELL';
   else if(score<=40) decisionLabel='MODERATE SELL';
   else decisionLabel='HOLD';
-  
   return {score, decisionLabel, signals, confluence};
 }
 
-/* ---------------------------
-   AI Explanation
-   --------------------------- */
 function generateAIExplanation(ctx, decision) {
   const parts = [];
   if(ctx.patternSummary) parts.push(`Pattern detected: ${ctx.patternSummary}.`);
-  
-  if(ctx.confluence) {
-    parts.push(`Confluence analysis shows ${ctx.confluence.bullishCount} bullish and ${ctx.confluence.bearishCount} bearish signals agreeing.`);
-  }
-  
+  if(ctx.confluence) parts.push(`Confluence analysis shows ${ctx.confluence.bullishCount} bullish and ${ctx.confluence.bearishCount} bearish signals agreeing.`);
   if(ctx.rsi!==null){
     if(ctx.rsi<35) parts.push(`RSI is low (${ctx.rsi.toFixed(0)}), indicating buying exhaustion/support.`);
     else if(ctx.rsi>65) parts.push(`RSI is elevated (${ctx.rsi.toFixed(0)}), indicating overbought pressure.`);
     else parts.push(`RSI at ${ctx.rsi.toFixed(0)} shows neutral momentum.`);
   }
-  
   if(ctx.macdHist!==null){
     if(ctx.macdHist>0) parts.push(`MACD histogram positive (${ctx.macdHist.toFixed(3)}), momentum favors upside.`);
     else parts.push(`MACD histogram negative (${ctx.macdHist.toFixed(3)}), momentum favors downside.`);
   }
-  
   if(ctx.ema50!==null && ctx.ema200!==null){
     if(ctx.ema50>ctx.ema200) parts.push('EMA50 > EMA200 – structural trend is bullish.');
     else parts.push('EMA50 < EMA200 – structural trend is bearish.');
   }
-  
-  if(ctx.volume && ctx.volume.volumeTrend) {
-    parts.push(`Volume is ${ctx.volume.volumeTrend}, which ${ctx.volume.volumeTrend==='above-average'?'supports':'weakens'} the signal.`);
-  }
-  
-  if(ctx.volatilityRegime) {
-    parts.push(`Market is in ${ctx.volatilityRegime} volatility regime.`);
-  }
-  
+  if(ctx.volume && ctx.volume.volumeTrend) parts.push(`Volume is ${ctx.volume.volumeTrend}, which ${ctx.volume.volumeTrend==='above-average'?'supports':'weakens'} the signal.`);
+  if(ctx.volatilityRegime) parts.push(`Market is in ${ctx.volatilityRegime} volatility regime.`);
   parts.push(`Final verdict: ${decision}.`);
-  
   const conf = ctx.score>=75?0.9:ctx.score>=60?0.75:ctx.score<=25?0.9:ctx.score<=40?0.6:0.5;
   parts.push(`Confidence: ${(conf*100).toFixed(0)}% based on indicator confluence.`);
-  
   return { text: parts.join(' '), confidence: conf };
 }
 
-/* ---------------------------
-   History & Watchlist (HYBRID IMPLEMENTATION)
-   --------------------------- */
 function lsGet(key){ try{ return JSON.parse(localStorage.getItem(key)||'[]'); }catch{return [];} }
 function lsSet(key,val){ try{ localStorage.setItem(key, JSON.stringify(val)); }catch(e){ console.warn('lsSet', e); } }
 
 const HISTORY_KEY = 'esa_history_v12';
 const WATCH_KEY = 'esa_watchlist_v12';
 
-// Local-first add, then enqueue cloud sync
+// IMPROVED: Better merge logic with deduplication
 async function addSavedRecordHybrid(rec){
   const list = lsGet(HISTORY_KEY);
   list.unshift(rec);
   if(list.length>800) list.length=800;
   lsSet(HISTORY_KEY, list);
   renderSavedHistory();
-
-  // enqueue for cloud sync
   if(window.esaCloud){
-    try{
-      window.esaCloud.enqueueForSync('history', {...rec, ts: Date.now()});
-      const auth = window._esa_firebase && window._esa_firebase.auth;
-      if(auth && auth.currentUser) await window.esaCloud.flushSyncQueue(auth.currentUser.uid);
-    }catch(e){ console.warn('addSavedRecordHybrid cloud enqueue failed', e); window.esaCloud.enqueueForSync('history', {...rec, ts: Date.now()}); }
+    window.esaCloud.enqueueForSync('history', {...rec, ts: Date.now()});
+    const auth = window._esa_firebase?.auth;
+    if(auth?.currentUser) {
+      await window.esaCloud.flushSyncQueue(auth.currentUser.uid);
+    }
   }
 }
 
+// IMPROVED: Fetch and merge with proper deduplication
 async function getSavedHistoryHybrid(){
   const local = lsGet(HISTORY_KEY);
-  if(!(window.esaCloud && navigator.onLine)) return local;
+  if(!(window.esaCloud && navigator.onLine)) {
+    console.log('Using local history only');
+    return local;
+  }
   try{
-    const auth = window._esa_firebase && window._esa_firebase.auth;
-    if(auth && auth.currentUser){
+    const auth = window._esa_firebase?.auth;
+    if(auth?.currentUser){
       const uid = auth.currentUser.uid;
       const cloudList = await window.esaCloud.fetchCloudList(uid, 'history');
-      const merged = [...local];
-      const keys = new Set(local.map(r=> (r.ts||'') + '|' + (r.symbol||'')));
-      cloudList.forEach(c=>{ const k = (c.ts||'') + '|' + (c.symbol||''); if(!keys.has(k)) merged.unshift(c); });
-      return merged.slice(0,800);
+      
+      // Better deduplication: use symbol+date as key
+      const merged = new Map();
+      [...local, ...cloudList].forEach(r => {
+        const key = `${r.symbol}_${r.date}`;
+        if(!merged.has(key) || r.syncedAt) {
+          merged.set(key, r);
+        }
+      });
+      
+      const result = Array.from(merged.values())
+        .sort((a, b) => new Date(b.date) - new Date(a.date))
+        .slice(0, 800);
+      
+      lsSet(HISTORY_KEY, result);
+      console.log(`✅ Merged ${result.length} history records`);
+      return result;
     }
-  }catch(e){ console.warn('getSavedHistoryHybrid', e); }
+  }catch(e){ console.warn('getSavedHistoryHybrid error:', e); }
   return local;
 }
 
-function getWatchlistLocal(){ try{ return JSON.parse(localStorage.getItem(WATCH_KEY)||'[]'); }catch{return [];} }
-function saveWatchlistLocal(list){ try{ localStorage.setItem(WATCH_KEY, JSON.stringify(list)); }catch(e){console.warn('saveWatchlistLocal', e);} }
+// IMPROVED: Watchlist with proper cloud sync
+async function getWatchlistHybrid(){
+  const local = JSON.parse(localStorage.getItem(WATCH_KEY) || '[]');
+  if(!(window.esaCloud && navigator.onLine)) {
+    console.log('Using local watchlist only');
+    return local;
+  }
+  try{
+    const auth = window._esa_firebase?.auth;
+    if(auth?.currentUser){
+      const uid = auth.currentUser.uid;
+      const cloudList = await window.esaCloud.fetchWatchlist(uid);
+      
+      // Merge and deduplicate
+      const merged = [...new Set([...local, ...cloudList])];
+      localStorage.setItem(WATCH_KEY, JSON.stringify(merged));
+      console.log(`✅ Merged watchlist: ${merged.length} items`);
+      return merged;
+    }
+  }catch(e){ console.warn('getWatchlistHybrid error:', e); }
+  return local;
+}
 
 async function toggleWatchHybrid(symbol){
   if(!symbol) return alert('Enter a symbol first');
-  const list = getWatchlistLocal();
+  const list = JSON.parse(localStorage.getItem(WATCH_KEY) || '[]');
   const exists = list.includes(symbol);
   const newList = exists? list.filter(x=>x!==symbol) : [symbol, ...list];
-  saveWatchlistLocal(newList);
-  renderWatchlist();
-
-  if(window.esaCloud){
-    window.esaCloud.enqueueForSync('watchlist', { list: newList, ts: Date.now() });
-    const auth = window._esa_firebase && window._esa_firebase.auth;
-    if(auth && auth.currentUser) window.esaCloud.flushSyncQueue(auth.currentUser.uid).catch(()=>{});
+  localStorage.setItem(WATCH_KEY, JSON.stringify(newList));
+  
+  // Immediately sync to cloud
+  const auth = window._esa_firebase?.auth;
+  if(auth?.currentUser && window.esaCloud) {
+    await window.esaCloud.saveWatchlistToCloud(auth.currentUser.uid, newList);
   }
+  
+  renderWatchlist();
   alert(exists? `${symbol} removed from watchlist` : `${symbol} added to watchlist`);
 }
 
-/* ---------------------------
-   PDF Export (unchanged)
-   --------------------------- */
 async function exportCurrentToPDF(){
   if(document.getElementById('outputArea').style.display === 'none'){ alert('Run an analysis first'); return; }
   const clone = document.createElement('div');
   clone.style.width='800px'; clone.style.background='#fff'; clone.style.padding='18px'; clone.style.color='#071026';
-  clone.innerHTML = `
-    <div style="display:flex;justify-content:space-between;align-items:center">
-      <div><h2 style="margin:0">Enhanced Swing Analyzer v12.0</h2><div style="font-size:12px;color:#333;margin-top:6px">Curated By - BIPLAB BAWALI</div></div>
-      <div style="text-align:right;font-size:12px;color:#333">${document.getElementById('outTicker').textContent || ''}<br>${new Date().toLocaleString()}</div>
-    </div>
-    <hr style="margin:12px 0;border:none;border-top:1px solid #eee" />
-    <div id="pdfBody"></div>
-    <hr style="margin:12px 0;border:none;border-top:1px solid #eee" />
-    <div style="font-size:11px;color:#666">Curated By - BIPLAB BAWALI • Enhanced Swing Analyzer v12.0</div>
-  `;
+  clone.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center"><div><h2 style="margin:0">Enhanced Swing Analyzer v12.1</h2><div style="font-size:12px;color:#333;margin-top:6px">Curated By - BIPLAB BAWALI</div></div><div style="text-align:right;font-size:12px;color:#333">${document.getElementById('outTicker').textContent || ''}<br>${new Date().toLocaleString()}</div></div><hr style="margin:12px 0;border:none;border-top:1px solid #eee" /><div id="pdfBody"></div><hr style="margin:12px 0;border:none;border-top:1px solid #eee" /><div style="font-size:11px;color:#666">Curated By - BIPLAB BAWALI • Enhanced Swing Analyzer v12.1</div>`;
   const pdfBody = clone.querySelector('#pdfBody');
-  pdfBody.innerHTML = `
-    <h3>Summary</h3>
-    <div><strong>Price:</strong> ${document.getElementById('outPrice').textContent}</div>
-    <div><strong>Decision:</strong> ${document.getElementById('decisionBadge').textContent}</div>
-    <div><strong>Score:</strong> ${document.getElementById('scoreFill').textContent}</div>
-    <h3 style="margin-top:12px">Pattern Analysis</h3>
-    <div style="background:#f7f9fc;padding:8px;border-radius:6px">${document.getElementById('patternAnalysis').innerHTML}</div>
-    <h3 style="margin-top:12px">Smart Advice</h3>
-    <div style="background:#f0fdf4;padding:8px;border-radius:6px">${document.getElementById('smartAdvice').innerHTML}</div>
-    <h3 style="margin-top:12px">AI Explanation</h3>
-    <div style="background:#fff7ed;padding:8px;border-radius:6px">${document.getElementById('aiExplain').innerHTML}</div>
-    <h3 style="margin-top:12px">Indicators</h3>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-      ${Array.from(document.querySelectorAll('#indicatorGrid .ind-item')).map(it=>`<div style="background:#fff;padding:8px;border-radius:6px;border:1px solid #eee"><div style="font-size:12px;color:#666">${it.querySelector('.ind-label').textContent}</div><div style="font-weight:600;margin-top:6px">${it.querySelector('.ind-value').textContent}</div><div style="font-size:12px;color:#666;margin-top:6px">${it.querySelector('.ind-signal')?it.querySelector('.ind-signal').textContent:''}</div></div>`).join('')}
-    </div>
-    <h3 style="margin-top:12px">Risk Management</h3>
-    <div><strong>Stop Loss:</strong> ${document.getElementById('stopLoss').textContent} &nbsp; <strong>T1:</strong> ${document.getElementById('target1').textContent} &nbsp; <strong>T2:</strong> ${document.getElementById('target2').textContent}</div>
-  `;
+  pdfBody.innerHTML = `<h3>Summary</h3><div><strong>Price:</strong> ${document.getElementById('outPrice').textContent}</div><div><strong>Decision:</strong> ${document.getElementById('decisionBadge').textContent}</div><div><strong>Score:</strong> ${document.getElementById('scoreFill').textContent}</div><h3 style="margin-top:12px">Pattern Analysis</h3><div style="background:#f7f9fc;padding:8px;border-radius:6px">${document.getElementById('patternAnalysis').innerHTML}</div><h3 style="margin-top:12px">Smart Advice</h3><div style="background:#f0fdf4;padding:8px;border-radius:6px">${document.getElementById('smartAdvice').innerHTML}</div>`;
   document.body.appendChild(clone);
   try{
     const canvas = await html2canvas(clone, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
@@ -805,56 +831,22 @@ async function exportCurrentToPDF(){
   }catch(e){ console.error(e); alert('PDF export failed: ' + e.message); } finally { clone.remove(); }
 }
 
-/* ---------------------------
-   Indicator color helpers
-   --------------------------- */
-function colorForRSI(rsi){
-  if(rsi===null || rsi===undefined || isNaN(rsi)) return {color: 'var(--neutral)', textColor:'var(--neutral)'};
-  if(rsi > 60) return {color: 'var(--good)', textColor:'var(--good)'};
-  if(rsi < 40) return {color: 'var(--bad)', textColor:'var(--bad)'};
-  return {color: 'var(--neutral)', textColor:'var(--neutral)'};
-}
-function colorForMACD(hist){
-  if(hist===null || hist===undefined || isNaN(hist)) return {color:'var(--neutral)', textColor:'var(--neutral)'};
-  if(hist > 0) return {color:'var(--good)', textColor:'var(--good)'};
-  if(hist < 0) return {color:'var(--bad)', textColor:'var(--bad)'};
-  return {color:'var(--neutral)', textColor:'var(--neutral)'};
-}
-function colorForEMA(ema50, ema200){
-  if(ema50===null || ema200===null) return {color:'var(--neutral)', textColor:'var(--neutral)'};
-  if(ema50 > ema200) return {color:'var(--good)', textColor:'var(--good)'};
-  if(ema50 < ema200) return {color:'var(--bad)', textColor:'var(--bad)'};
-  return {color:'var(--neutral)', textColor:'var(--neutral)'};
-}
-function colorForVWAP(price, vwap){
-  if(!vwap || !price) return {color:'var(--neutral)', textColor:'var(--neutral)'};
-  const diff = (price - vwap);
-  if(diff > 0) return {color:'var(--good)', textColor:'var(--good)'};
-  if(diff < 0) return {color:'var(--bad)', textColor:'var(--bad)'};
-  return {color:'var(--neutral)', textColor:'var(--neutral)'};
-}
-function colorForSupertrend(trend){
-  if(!trend) return {color:'var(--neutral)', textColor:'var(--neutral)'};
-  if(trend==='bullish') return {color:'var(--good)', textColor:'var(--good)'};
-  if(trend==='bearish') return {color:'var(--bad)', textColor:'var(--bad)'};
-  return {color:'var(--neutral)', textColor:'var(--neutral)'};
-}
-function colorForBBPosition(price, bb){
-  if(!bb || !price) return {color:'var(--neutral)', textColor:'var(--neutral)'};
-  if(price < bb.lower) return {color:'var(--good)', textColor:'var(--good)'};
-  if(price > bb.upper) return {color:'var(--bad)', textColor:'var(--bad)'};
-  return {color:'var(--neutral)', textColor:'var(--neutral)'};
-}
+function colorForRSI(rsi){ if(rsi===null || rsi===undefined || isNaN(rsi)) return {color: 'var(--neutral)', textColor:'var(--neutral)'}; if(rsi > 60) return {color: 'var(--good)', textColor:'var(--good)'}; if(rsi < 40) return {color: 'var(--bad)', textColor:'var(--bad)'}; return {color: 'var(--neutral)', textColor:'var(--neutral)'}; }
+function colorForMACD(hist){ if(hist===null || hist===undefined || isNaN(hist)) return {color:'var(--neutral)', textColor:'var(--neutral)'}; if(hist > 0) return {color:'var(--good)', textColor:'var(--good)'}; if(hist < 0) return {color:'var(--bad)', textColor:'var(--bad)'}; return {color:'var(--neutral)', textColor:'var(--neutral)'}; }
+function colorForEMA(ema50, ema200){ if(ema50===null || ema200===null) return {color:'var(--neutral)', textColor:'var(--neutral)'}; if(ema50 > ema200) return {color:'var(--good)', textColor:'var(--good)'}; if(ema50 < ema200) return {color:'var(--bad)', textColor:'var(--bad)'}; return {color:'var(--neutral)', textColor:'var(--neutral)'}; }
+function colorForVWAP(price, vwap){ if(!vwap || !price) return {color:'var(--neutral)', textColor:'var(--neutral)'}; const diff = (price - vwap); if(diff > 0) return {color:'var(--good)', textColor:'var(--good)'}; if(diff < 0) return {color:'var(--bad)', textColor:'var(--bad)'}; return {color:'var(--neutral)', textColor:'var(--neutral)'}; }
+function colorForSupertrend(trend){ if(!trend) return {color:'var(--neutral)', textColor:'var(--neutral)'}; if(trend==='bullish') return {color:'var(--good)', textColor:'var(--good)'}; if(trend==='bearish') return {color:'var(--bad)', textColor:'var(--bad)'}; return {color:'var(--neutral)', textColor:'var(--neutral)'}; }
+function colorForBBPosition(price, bb){ if(!bb || !price) return {color:'var(--neutral)', textColor:'var(--neutral)'}; if(price < bb.lower) return {color:'var(--good)', textColor:'var(--good)'}; if(price > bb.upper) return {color:'var(--bad)', textColor:'var(--bad)'}; return {color:'var(--neutral)', textColor:'var(--neutral)'}; }
 
-/* ---------------------------
-   Helpers
-   --------------------------- */
 function setStatus(s){ document.getElementById('status').textContent = s; }
 function formatINR(x){ if(x===null||x===undefined||isNaN(x)) return '-'; return '₹' + Number(x).toFixed(2); }
 
-/* ---------------------------
-   Initialization
-   --------------------------- */
+// Make functions globally accessible
+window.renderSavedHistory = renderSavedHistory;
+window.renderWatchlist = renderWatchlist;
+window.getSavedHistoryHybrid = getSavedHistoryHybrid;
+window.getWatchlistHybrid = getWatchlistHybrid;
+
 document.addEventListener('DOMContentLoaded', ()=>{
   document.getElementById('analyzeBtn').addEventListener('click', runAnalysis);
   document.getElementById('toggleLearn').addEventListener('click', ()=> {
@@ -865,17 +857,53 @@ document.addEventListener('DOMContentLoaded', ()=>{
     if(!showing) activateLearnTab('beginner');
   });
   document.querySelectorAll('.learn-tab-btn').forEach(b=> b.addEventListener('click', ()=> activateLearnTab(b.dataset.tab)));
-  document.getElementById('watchBtn').addEventListener('click', ()=> { const s=document.getElementById('symbol').value.trim().toUpperCase(); toggleWatchHybrid(s); renderWatchlist(); });
+  document.getElementById('watchBtn').addEventListener('click', async ()=> { const s=document.getElementById('symbol').value.trim().toUpperCase(); await toggleWatchHybrid(s); });
   document.getElementById('exportPdfBtn').addEventListener('click', exportCurrentToPDF);
-  document.getElementById('exportCsvBtn').addEventListener('click', ()=>{ exportSavedHistoryCSV(); });
   document.getElementById('clearHistoryBtn').addEventListener('click', ()=>{ if(confirm('Clear saved history?')){ localStorage.removeItem(HISTORY_KEY); renderSavedHistory(); }});
-  document.getElementById('exportHistoryCsvBtn').addEventListener('click', exportSavedHistoryCSV);
-  document.getElementById('clearWatchBtn').addEventListener('click', ()=>{ if(confirm('Clear watchlist?')){ localStorage.removeItem(WATCH_KEY); renderWatchlist(); } });
-
-  renderSavedHistory();
-  renderWatchlist();
+  document.getElementById('clearWatchBtn').addEventListener('click', async ()=>{ 
+    if(confirm('Clear watchlist?')){ 
+      localStorage.removeItem(WATCH_KEY); 
+      const auth = window._esa_firebase?.auth;
+      if(auth?.currentUser && window.esaCloud) {
+        await window.esaCloud.saveWatchlistToCloud(auth.currentUser.uid, []);
+      }
+      renderWatchlist(); 
+    } 
+  });
+  
+  // NEW: Manual sync buttons
+  document.getElementById('syncNowBtn').addEventListener('click', async ()=> {
+    const auth = window._esa_firebase?.auth;
+    if(auth?.currentUser && window.esaCloud) {
+      setStatus('Syncing...');
+      await window.esaCloud.flushSyncQueue(auth.currentUser.uid);
+      await getSavedHistoryHybrid();
+      await getWatchlistHybrid();
+      setStatus('✓ Synced');
+    } else {
+      alert('Not signed in. Please refresh the page.');
+    }
+  });
+  
+  document.getElementById('refreshHistoryBtn').addEventListener('click', async ()=> {
+    setStatus('Refreshing history...');
+    await getSavedHistoryHybrid();
+    setStatus('✓ Refreshed');
+  });
+  
+  document.getElementById('refreshWatchBtn').addEventListener('click', async ()=> {
+    setStatus('Refreshing watchlist...');
+    await getWatchlistHybrid();
+    setStatus('✓ Refreshed');
+  });
 
   document.getElementById('symbol').addEventListener('keypress', (e)=> { if(e.key==='Enter') runAnalysis(); });
+  
+  // Initial load
+  setTimeout(async () => {
+    await getSavedHistoryHybrid();
+    await getWatchlistHybrid();
+  }, 1000);
 });
 
 function activateLearnTab(tabId){
@@ -883,9 +911,6 @@ function activateLearnTab(tabId){
   document.querySelectorAll('.learn-content').forEach(c => c.classList.toggle('active', c.id===tabId));
 }
 
-/* ---------------------------
-   MAIN ANALYSIS ROUTINE (ENHANCED - full v11 logic)
-   --------------------------- */
 async function runAnalysis(){
   const symbolRaw = document.getElementById('symbol').value.trim().toUpperCase();
   if(!symbolRaw) return alert('Please enter a stock symbol (e.g., RELIANCE)');
@@ -896,18 +921,12 @@ async function runAnalysis(){
   const analyzeBtn = document.getElementById('analyzeBtn');
   analyzeBtn.classList.add('analyzing');
   analyzeBtn.disabled = true;
-  document.getElementById('clearHistoryBtn').classList.remove('disabled');
-  document.getElementById('clearWatchBtn').classList.remove('disabled');
 
   setStatus('Fetching data...');
   document.getElementById('outputArea').style.display = 'none';
 
   try{
-    const [daily, weekly] = await Promise.all([ 
-      fetchYahoo(symbolRaw, '1d', range), 
-      fetchYahoo(symbolRaw, '1wk', '2y') 
-    ]);
-    
+    const [daily, weekly] = await Promise.all([ fetchYahoo(symbolRaw, '1d', range), fetchYahoo(symbolRaw, '1wk', '2y') ]);
     setStatus('Calculating indicators... (1/3)');
     
     const { closes, highs, lows, volumes } = daily;
@@ -946,53 +965,34 @@ async function runAnalysis(){
 
     setStatus('Computing signals... (3/3)');
 
-    // Volatility regime detection
     const volatilityRatio = atr / price;
     const volatilityRegime = volatilityRatio > 0.03 ? 'high' : volatilityRatio < 0.015 ? 'low' : 'normal';
 
-    const ctx = { 
-      price, rsi, ema50, ema200, 
-      macdHist: macd?.histogram, 
-      bb, vwap, atr, supertrend, 
-      volume: volumeData, weeklyBull, 
-      patternBias, patternSummary,
-      volatilityRegime
-    };
-    
+    const ctx = { price, rsi, ema50, ema200, macdHist: macd?.histogram, bb, vwap, atr, supertrend, volume: volumeData, weeklyBull, patternBias, patternSummary, volatilityRegime};
     const { score, decisionLabel, signals, confluence } = computeScoreAndDecision(ctx);
     ctx.score = score;
     ctx.confluence = confluence;
 
-    // Volatility-adjusted risk management
     const isBuy = decisionLabel.includes('BUY'), isSell = decisionLabel.includes('SELL');
     const atrValue = atr || price * 0.02;
     const isHighVol = volatilityRatio > 0.03;
-
     const stopMultiplier = isHighVol ? 2.0 : 1.5;
     const target1Multiplier = isHighVol ? 2.5 : 2.0;
     const target2Multiplier = isHighVol ? 5.0 : 4.0;
 
-    const stopLoss = isBuy ? price - stopMultiplier * atrValue : 
-                     isSell ? price + stopMultiplier * atrValue : null;
-    const target1 = isBuy ? price + target1Multiplier * atrValue : 
-                    isSell ? price - target1Multiplier * atrValue : null;
-    const target2 = isBuy ? price + target2Multiplier * atrValue : 
-                    isSell ? price - target2Multiplier * atrValue : null;
-
+    const stopLoss = isBuy ? price - stopMultiplier * atrValue : isSell ? price + stopMultiplier * atrValue : null;
+    const target1 = isBuy ? price + target1Multiplier * atrValue : isSell ? price - target1Multiplier * atrValue : null;
+    const target2 = isBuy ? price + target2Multiplier * atrValue : isSell ? price - target2Multiplier * atrValue : null;
     const rrRatio = stopLoss ? Math.abs((target1 - price) / (stopLoss - price)).toFixed(2) : null;
-
-    // Position sizing
     const accountRisk = 0.02;
     const stopDistance = stopLoss ? Math.abs(price - stopLoss) : 0;
     const positionSize = stopDistance > 0 ? ((accountRisk / (stopDistance / price)) * 100).toFixed(2) : null;
 
-    // Render outputs
     document.getElementById('outTicker').textContent = ticker + ' (NSE)';
     document.getElementById('outPrice').textContent = `Price: ${formatINR(price)} ${change>=0?'▲':'▼'} ${formatINR(Math.abs(change))} (${changePct>=0?'+':''}${changePct.toFixed(2)}%)`;
     document.getElementById('outPrice').style.color = change>=0? 'var(--good)' : 'var(--bad)';
     document.getElementById('patternAnalysis').innerHTML = patternText + (patternSummary ? `<div style="margin-top:6px;font-size:12px;color:#6b7280">Bias: ${patternSummary}</div>` : '');
 
-    // Score bar
     const scoreFill = document.getElementById('scoreFill');
     scoreFill.style.width = score + '%';
     scoreFill.textContent = score + '/100';
@@ -1000,7 +1000,6 @@ async function runAnalysis(){
     else if(score <= 40) scoreFill.style.background = 'linear-gradient(90deg,var(--bad),#ef4444)';
     else scoreFill.style.background = 'linear-gradient(90deg,#d97706,#f59e0b)';
 
-    // Decision badge
     const badge = document.getElementById('decisionBadge');
     badge.textContent = decisionLabel; badge.className = 'decision';
     if(decisionLabel==='STRONG BUY') badge.classList.add('strong-buy');
@@ -1009,7 +1008,6 @@ async function runAnalysis(){
     else if(decisionLabel==='STRONG SELL') badge.classList.add('strong-sell');
     else badge.classList.add('hold');
 
-    // Smart advice
     const confidence = Math.max(0.35, Math.min(0.95, (score/100)));
     const riskLevel = score>=75?2:score>=60?3:score>40?4:5;
     let adviceText = '';
@@ -1023,24 +1021,20 @@ async function runAnalysis(){
     document.getElementById('smartAdvice').innerHTML = adviceText;
     document.getElementById('smartAdvice').style.display = 'block';
 
-    // AI Explain
     const expl = generateAIExplanation({...ctx, patternSummary}, decisionLabel);
     document.getElementById('aiExplain').innerHTML = `<strong>Why this verdict?</strong><div style="margin-top:6px">${expl.text}</div>`;
     document.getElementById('aiExplain').style.display = 'block';
 
-    // Signals summary
     let summaryHTML = `<div style="margin-bottom:8px"><strong>Signals:</strong> ${score} points</div>`;
     summaryHTML += signals.map(s=>`<div style="margin:6px 0">${s.type==='bullish'?'🟢':s.type==='bearish'?'🔴':'🟡'} ${s.text}</div>`).join('');
     document.getElementById('summaryList').innerHTML = summaryHTML;
 
-    // Risk blocks
     document.getElementById('stopLoss').textContent = formatINR(stopLoss);
     document.getElementById('target1').textContent = formatINR(target1);
     document.getElementById('target2').textContent = formatINR(target2);
     document.getElementById('rrRatio').textContent = rrRatio ? rrRatio + ':1' : '-';
     document.getElementById('positionSize').textContent = positionSize ? positionSize + '%' : '-';
 
-    // Indicator grid
     const indicators = [
       {label:'RSI (14)', value: rsi? rsi.toFixed(2):'-', type:'rsi'},
       {label:'EMA 50', value: formatINR(ema50), type:'ema'},
@@ -1055,55 +1049,33 @@ async function runAnalysis(){
     
     const grid = indicators.map(ind => {
       let colorStyle = 'color:var(--neutral)';
-      if(ind.type==='rsi'){
-        const c = colorForRSI(rsi); colorStyle = `color:${c.textColor};font-weight:600`;
-      } else if(ind.type==='macd'){
-        const c = colorForMACD(macd?.histogram); colorStyle = `color:${c.textColor};font-weight:600`;
-      } else if(ind.type==='ema'){
-        const c = colorForEMA(ema50, ema200); colorStyle = `color:${c.textColor};font-weight:600`;
-      } else if(ind.type==='vwap'){
-        const c = colorForVWAP(price, vwap); colorStyle = `color:${c.textColor};font-weight:600`;
-      } else if(ind.type==='supertrend'){
-        const c = colorForSupertrend(supertrend?.trend); colorStyle = `color:${c.textColor};font-weight:600`;
-      } else if(ind.type==='bb'){
-        const c = colorForBBPosition(price, bb); colorStyle = `color:${c.textColor};font-weight:600`;
-      } else {
-        colorStyle = 'color:var(--neutral);font-weight:600';
-      }
+      if(ind.type==='rsi'){ const c = colorForRSI(rsi); colorStyle = `color:${c.textColor};font-weight:600`; }
+      else if(ind.type==='macd'){ const c = colorForMACD(macd?.histogram); colorStyle = `color:${c.textColor};font-weight:600`; }
+      else if(ind.type==='ema'){ const c = colorForEMA(ema50, ema200); colorStyle = `color:${c.textColor};font-weight:600`; }
+      else if(ind.type==='vwap'){ const c = colorForVWAP(price, vwap); colorStyle = `color:${c.textColor};font-weight:600`; }
+      else if(ind.type==='supertrend'){ const c = colorForSupertrend(supertrend?.trend); colorStyle = `color:${c.textColor};font-weight:600`; }
+      else if(ind.type==='bb'){ const c = colorForBBPosition(price, bb); colorStyle = `color:${c.textColor};font-weight:600`; }
+      else { colorStyle = 'color:var(--neutral);font-weight:600'; }
       return `<div class="ind-item"><div class="ind-label">${ind.label}</div><div class="ind-value" style="${colorStyle}">${ind.value}</div><div class="ind-signal"></div></div>`;
     }).join('');
     document.getElementById('indicatorGrid').innerHTML = grid;
 
-    // Weekly & volume
     document.getElementById('weeklyAnalysis').innerHTML = `<div style="font-weight:700;margin-bottom:6px">Weekly Trend: ${weeklyBull===null?'Insufficient data':weeklyBull?'🟢 BULLISH':'🔴 BEARISH'}</div><div style="font-size:12px;color:#6b7280">Weekly EMA50: ${formatINR(weeklyEma50)}<br>Weekly EMA200: ${formatINR(weeklyEma200)}</div>`;
     document.getElementById('volumeAnalysis').innerHTML = `<div style="font-weight:700;margin-bottom:6px">Volume: ${volumeData?volumeData.volumeTrend.toUpperCase():'-'}</div><div style="font-size:12px;color:#6b7280">Current: ${volumeData?volumeData.currentVolume.toLocaleString():'-'}<br>20-day Avg: ${volumeData?volumeData.avgVolume.toFixed(0):'-'}<br>Change: ${volumeData?volumeData.volumeChange:'-'}%</div>`;
 
-    // Show output
     document.getElementById('outputArea').style.display = 'grid';
     setStatus('✓ Analysis Complete');
 
-    // Save to history if checked (uses hybrid addSavedRecordHybrid)
     const saveChecked = document.getElementById('saveHistoryToggle').checked;
     if(saveChecked){
-      const record = {
-        symbol: ticker,
-        date: (new Date()).toISOString(),
-        score,
-        decision: decisionLabel,
-        pattern: patternSummary || '',
-        advice: adviceText,
-        confidence: confidence
-      };
-      addSavedRecordHybrid(record);
+      const record = {symbol: ticker, date: (new Date()).toISOString(), score, decision: decisionLabel, pattern: patternSummary || '', advice: adviceText, confidence: confidence};
+      await addSavedRecordHybrid(record);
       document.getElementById('saveHistoryToggle').checked = false;
     }
 
   }catch(err){
     console.error(err);
-    
-    // Enhanced error messages
     let userMessage = 'Error: ';
-    
     if(err.message.includes('Proxy returned invalid')) {
       userMessage += 'Unable to fetch data. The symbol might be delisted or invalid.\n\nTry popular symbols like:\n• RELIANCE\n• TCS\n• INFY\n• HDFCBANK\n• WIPRO';
     } else if(err.message.includes('No data returned')) {
@@ -1115,76 +1087,56 @@ async function runAnalysis(){
     } else {
       userMessage += err.message + '\n\n💡 Tip: Use NSE symbols without .NS suffix\nExamples: RELIANCE, TCS, INFY, HDFCBANK';
     }
-    
     alert(userMessage);
     setStatus('❌ Error');
-    
   } finally {
     analyzeBtn.classList.remove('analyzing');
     analyzeBtn.disabled = false;
   }
 }
 
-/* ---------------------------
-   History / Watch Helpers (renderers & export)
-   --------------------------- */
-function renderSavedHistory(){
+async function renderSavedHistory(){
   const container = document.getElementById('historyList');
-  const list = lsGet(HISTORY_KEY);
-  if(!list || list.length===0){ container.innerHTML = '<div style="color:#9ca3af;font-style:italic;">No saved analyses yet</div>'; return; }
+  const list = await getSavedHistoryHybrid();
+  if(!list || list.length===0){ 
+    container.innerHTML = '<div style="color:#9ca3af;font-style:italic;">No saved analyses yet</div>'; 
+    return; 
+  }
   container.innerHTML = '';
-  list.forEach(r=>{
-    const el = document.createElement('div'); el.className='history-item';
-    el.innerHTML = `<div style="font-weight:700">${r.symbol}</div><div style="font-size:12px;color:#6b7280">${new Date(r.date).toLocaleString()} • ${r.score}/100 • ${r.decision}</div><div style="margin-top:6px;color:#374151">${r.pattern||''}</div>`;
+  list.slice(0, 50).forEach(r=>{
+    const el = document.createElement('div'); 
+    el.className='history-item';
+    const syncIcon = r.syncedAt ? '☁️' : '📱';
+    el.innerHTML = `<div style="font-weight:700">${syncIcon} ${r.symbol}</div><div style="font-size:12px;color:#6b7280">${new Date(r.date).toLocaleString()} • ${r.score}/100 • ${r.decision}</div><div style="margin-top:6px;color:#374151">${r.pattern||''}</div>`;
     el.addEventListener('click', ()=>{ document.getElementById('symbol').value = r.symbol; runAnalysis(); });
     container.appendChild(el);
   });
 }
 
-function renderWatchlist(){
+async function renderWatchlist(){
   const container = document.getElementById('watchlist');
-  const list = getWatchlistLocal();
-  if(!list || list.length===0){ container.innerHTML = '<div style="color:#9ca3af;font-style:italic;">No stocks added yet</div>'; return; }
+  const list = await getWatchlistHybrid();
+  if(!list || list.length===0){ 
+    container.innerHTML = '<div style="color:#9ca3af;font-style:italic;">No stocks added yet</div>'; 
+    return; 
+  }
   container.innerHTML = '';
   list.forEach(s=>{
-    const el = document.createElement('div'); el.className='history-item';
-    el.innerHTML = `<div style="font-weight:700">${s}</div>`;
+    const el = document.createElement('div'); 
+    el.className='history-item';
+    el.innerHTML = `<div style="font-weight:700">⭐ ${s}</div>`;
     el.addEventListener('click', ()=>{ document.getElementById('symbol').value = s; runAnalysis(); });
     container.appendChild(el);
   });
 }
 
-function exportSavedHistoryCSV(){
-  const rows = lsGet(HISTORY_KEY);
-  if(!rows || rows.length===0){ alert('No history to export'); return; }
-  const header = ['symbol','date','score','decision','pattern','advice','confidence'];
-  const csv = [header.join(',')].concat(rows.map(r=>{
-    const safe = v => `"${(r[v]||'').toString().replace(/"/g,'""')}"`;
-    return [safe('symbol'), safe('date'), r.score, safe('decision'), safe('pattern'), safe('advice'), r.confidence||''].join(',');
-  })).join('\n');
-  const blob = new Blob([csv], {type:'text/csv'}); const url = URL.createObjectURL(blob);
-  const a=document.createElement('a'); a.href=url; a.download = `ESA_history_${new Date().toISOString().slice(0,10)}.csv`; a.click(); URL.revokeObjectURL(url);
-}
-
-/* ---------------------------
-   Service Worker registration (external file)
-   --------------------------- */
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('service-worker.js')
       .then(reg => console.log('Service Worker registered ✅', reg.scope))
-      .catch(err => console.warn('Service Worker failed ❌', err));
+      .catch(err => console.warn('Service Worker registration failed ❌', err));
   });
 }
-
-/* ---------------------------
-   Small utility bindings
-   --------------------------- */
-document.addEventListener('DOMContentLoaded', ()=>{
-  // ensure initial renderers are called (history/watchlist)
-  renderSavedHistory();
-  renderWatchlist();
-});
 </script>
 </body>
 </html>
