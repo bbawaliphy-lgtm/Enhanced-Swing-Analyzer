@@ -322,12 +322,18 @@ body{margin:0;font-family:Inter,Segoe UI,Arial;background:linear-gradient(180deg
     const auth = window._esa_firebase && window._esa_firebase.auth;
     if(auth && auth.currentUser) window.esaCloud.flushSyncQueue(auth.currentUser.uid).catch(()=>{});
   });
-})();
+})();  <!-- closes the IIFE properly -->
+</script>
+
+<!-- Attach manifest -->
 <link rel="manifest" href="manifest.json">
+
+<!-- Register service worker -->
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('service-worker.js')
+    navigator.serviceWorker
+      .register('service-worker.js')
       .then(reg => console.log('Service Worker registered ✅'))
       .catch(err => console.warn('Service Worker failed ❌', err));
   });
