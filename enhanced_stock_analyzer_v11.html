@@ -1,0 +1,1017 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Enhanced Swing Analyzer v11.0 – Curated by BIPLAB BAWALI</title>
+
+<!-- PDF libs -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+<style>
+:root{
+  --bg:#071028;
+  --card:#ffffff;
+  --accent:#1e3c72;
+  --muted:#6b7280;
+  --good:#16a34a;
+  --bad:#dc2626;
+  --neutral:#9ca3af;
+  --accent2:#2a5298;
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:Inter,Segoe UI,Arial;background:linear-gradient(180deg,var(--bg),#0f1724);color:#e6eef8;display:flex;justify-content:center;padding:18px;min-height:100vh}
+.panel{width:100%;max-width:1100px;background:var(--card);color:#071026;border-radius:14px;padding:20px;box-shadow:0 12px 48px rgba(2,6,23,0.6)}
+.header-row{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.title{font-size:20px;color:var(--accent);margin:0;font-weight:800}
+.subtitle{font-size:13px;color:var(--muted);margin:0}
+.controls{display:flex;gap:10px;margin-top:12px;flex-wrap:wrap;align-items:center}
+input[type=text]{flex:1;min-width:180px;padding:12px 14px;border-radius:8px;border:1px solid #e6eef8;font-size:14px}
+select,button{padding:12px 16px;border-radius:8px;border:1px solid #e6eef8;background:transparent;cursor:pointer;min-height:44px;font-size:14px}
+button.primary{background:linear-gradient(90deg,var(--accent),var(--accent2));color:white;border:0;font-weight:700}
+button.ghost{background:transparent;border:1px solid #e6eef8;color:#071026}
+.meta{display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap}
+.chip{background:#f3f6fb;padding:8px 12px;border-radius:999px;font-weight:700;color:#071026;font-size:13px}
+
+.learn-panel{display:none;margin-top:12px;background:#fbfdff;border-radius:10px;padding:12px}
+.learn-tabs{display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+.learn-tab-btn{padding:8px 12px;border-radius:8px;border:1px solid #e6eef8;background:transparent;cursor:pointer}
+.learn-tab-btn.active{background:linear-gradient(90deg,var(--accent),var(--accent2));color:white;border:0}
+.learn-content{display:none;max-height:420px;overflow:auto;padding-top:6px}
+.learn-content.active{display:block}
+
+.result{display:grid;grid-template-columns:1fr 420px;gap:16px;margin-top:14px}
+.left{background:#f8fafc;padding:16px;border-radius:10px;color:#071026}
+.right{background:#eef6ff;padding:16px;border-radius:10px;color:#04203a}
+.label{font-size:12px;color:#6b7280;text-transform:uppercase;margin-bottom:6px}
+.big{font-size:28px;font-weight:800;margin:0}
+.sub{font-size:14px;color:#374151;margin-top:6px}
+.pattern-box{background:#f7f9fc;padding:10px;border-radius:8px;border-left:4px solid #60a5fa;font-size:13px;color:#071026}
+.score{display:flex;align-items:center;margin-top:8px}
+.score-bar{height:20px;width:100%;background:#e6eef8;border-radius:999px;overflow:hidden;position:relative}
+.score-fill{height:100%;text-align:center;font-weight:700;color:white;font-size:12px;line-height:20px;transition:width 0.8s ease}
+
+.decision{font-size:16px;font-weight:800;padding:10px 12px;border-radius:8px;margin-top:10px;display:inline-block}
+.strong-buy{background:#0f5132;color:#d1fae5}
+.mod-buy{background:#14532d;color:#d1fae5}
+.hold{background:#7c5e03;color:#fff7cc}
+.mod-sell{background:#7f1d1d;color:#ffe4e6}
+.strong-sell{background:#450a0a;color:#ffe4e6}
+
+.advice{margin-top:10px;padding:12px;border-radius:8px;background:#f0fdf4;border-left:4px solid #10b981;color:#064e3b}
+.ai-explain{margin-top:8px;padding:10px;border-radius:8px;background:#fff7ed;border-left:4px solid #f59e0b;color:#92400e}
+
+.kv{display:flex;justify-content:space-between;gap:8px;margin-top:8px;padding:8px;background:#f9fafb;border-radius:6px}
+.indicator-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+.ind-item{background:#f9fafb;padding:10px;border-radius:8px;border-left:3px solid #3b82f6;display:flex;flex-direction:column}
+.ind-label{font-size:11px;color:#6b7280;text-transform:uppercase}
+.ind-value{font-size:15px;font-weight:600;margin-top:6px}
+.ind-signal{font-size:12px;margin-top:6px;padding:4px 8px;border-radius:10px;display:inline-block;font-weight:600;color:#374151;background:transparent}
+
+.history-section{margin-top:14px;border-top:1px solid #e6eef8;padding-top:12px}
+.history-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px}
+.history-list{display:flex;flex-wrap:wrap;gap:8px;max-height:160px;overflow:auto}
+.history-item{background:#f3f6fb;padding:8px 10px;border-radius:8px;cursor:pointer;border:1px solid transparent}
+.history-item:hover{background:#e6eef8;border-color:var(--accent)}
+
+.footer{margin-top:14px;font-size:13px;color:#6b7280;text-align:center;padding-top:8px;border-top:1px solid #e6eef8}
+
+.analyzing {
+  position:relative;
+  overflow:visible;
+}
+.analyzing::after{
+  content:'Analyzing…';
+  position:absolute;
+  right:-6px;
+  top:-42px;
+  background:linear-gradient(90deg, rgba(14,56,120,0.12), rgba(14,56,120,0.18));
+  color:var(--accent);
+  padding:6px 10px;
+  border-radius:999px;
+  font-weight:700;
+  animation: shimmer 1.6s infinite;
+  box-shadow:0 6px 18px rgba(14,56,120,0.12);
+}
+@keyframes shimmer {
+  0%{transform:translateY(0) scale(1);opacity:0.9}
+  50%{transform:translateY(-3px) scale(1.02);opacity:1}
+  100%{transform:translateY(0) scale(1);opacity:0.9}
+}
+
+button.ghost, button.primary{transition:opacity .2s ease}
+button.disabled{opacity:0.45;pointer-events:none}
+
+/* Enhanced mobile responsiveness */
+@media(max-width:980px){
+  .result{grid-template-columns:1fr}
+  .indicator-grid{grid-template-columns:1fr}
+  .learn-panel{max-height:320px}
+}
+
+@media(max-width:640px){
+  body{padding:12px}
+  .panel{padding:16px;border-radius:10px}
+  .title{font-size:18px}
+  .subtitle{font-size:12px}
+  .controls{flex-direction:column; align-items:stretch;gap:8px}
+  input[type=text], select, button{width:100%; min-width:unset}
+  button.primary, button.ghost{padding:14px 18px;min-height:48px}
+  .header-row{flex-direction:column; align-items:flex-start;gap:10px}
+  .chip{font-size:11px; padding:6px 10px}
+  .meta{flex-direction:column; align-items:flex-start;gap:8px}
+  .history-header{flex-direction:column; align-items:flex-start; gap:8px}
+  .kv{flex-direction:column; gap:4px;align-items:flex-start}
+  .kv > div:last-child{font-weight:700}
+  .big{font-size:22px}
+  .decision{font-size:14px;padding:8px 10px}
+  .learn-panel{max-height:280px}
+  .learn-tabs{gap:6px}
+  .learn-tab-btn{padding:6px 10px;font-size:13px}
+  .indicator-grid{gap:8px}
+  .left, .right{padding:12px}
+  .history-list{max-height:200px}
+}
+</style>
+</head>
+<body>
+  <div class="panel">
+    <div class="header-row">
+      <div>
+        <h1 class="title">🎯 Enhanced Swing Analyzer – v11.0 (Advanced)</h1>
+        <p class="subtitle">Curated by BIPLAB BAWALI</p>
+      </div>
+      <div style="flex:1"></div>
+      <div class="chip" id="brandingChip">Curated By - BIPLAB BAWALI</div>
+    </div>
+
+    <div id="learnPanel" class="learn-panel" aria-hidden="true">
+      <div class="learn-tabs" role="tablist">
+        <button class="learn-tab-btn" data-tab="beginner">🧭 Beginner</button>
+        <button class="learn-tab-btn" data-tab="indicators">📈 Indicators</button>
+        <button class="learn-tab-btn" data-tab="patterns">🧩 Patterns</button>
+        <button class="learn-tab-btn" data-tab="psych">🧠 Psychology</button>
+      </div>
+
+      <div id="beginner" class="learn-content">
+        <details open><summary>What is the Market?</summary>
+          <p>Markets reflect collective expectations. Prices move when participants update beliefs. Your role: read structure and act with discipline.</p>
+        </details>
+        <details><summary>Candles & Timeframes</summary><p>Weekly = structure; Daily = entries. Use multiple timeframes to align trend and timing.</p></details>
+      </div>
+
+      <div id="indicators" class="learn-content">
+        <details open><summary>RSI</summary><p>RSI indicates conviction. Low values show selling exhaustion; high values show buying exhaustion.</p></details>
+        <details><summary>EMA 50/200</summary><p>EMA crossover is a structural filter – combine with price action.</p></details>
+        <details><summary>Confluence</summary><p>Multiple indicators agreeing increases signal reliability. Look for 4+ confirmations.</p></details>
+      </div>
+
+      <div id="patterns" class="learn-content">
+        <details open><summary>Double Top/Bottom</summary><p>Two attempts mark supply/demand exhaustion. Confirm with neckline break.</p></details>
+        <details><summary>Support & Resistance</summary><p>Price levels where buying/selling pressure concentrates. Key decision zones.</p></details>
+      </div>
+
+      <div id="psych" class="learn-content">
+        <details open><summary>Fear & Greed</summary><p>Keep a journal, control position sizing, and don't chase noise.</p></details>
+        <details><summary>Risk Management</summary><p>Never risk more than 2% per trade. Use stop-loss always.</p></details>
+      </div>
+    </div>
+
+    <div class="controls" role="toolbar">
+      <input id="symbol" type="text" placeholder="Enter NSE symbol (RELIANCE, TCS)" value="RELIANCE" />
+      <select id="lookback"><option value="180">6 months</option><option value="365" selected>12 months</option></select>
+      <button id="analyzeBtn" class="primary">🔬 Analyze Stock</button>
+      <button id="watchBtn" class="ghost" title="Add to watchlist">⭐ Add Watch</button>
+      <button id="toggleLearn" class="ghost">📘 Learn</button>
+      <label style="display:flex;align-items:center;gap:6px"><input id="saveHistoryToggle" type="checkbox"> Save to History</label>
+      <button id="exportPdfBtn" class="ghost">📄 Export PDF</button>
+      <button id="exportCsvBtn" class="ghost">⬇ Export CSV</button>
+    </div>
+
+    <div class="meta">
+      <div class="chip" id="status">Ready</div>
+      <div style="flex:1"></div>
+      <div style="font-size:13px;color:var(--muted)">AI Explain Mode: Auto • History is manual (check the box)</div>
+    </div>
+
+    <div id="outputArea" class="result" style="display:none">
+      <div class="left">
+        <div class="label">Stock Information</div>
+        <div class="big" id="outTicker">-</div>
+        <div class="sub" id="outPrice">Price: -</div>
+
+        <div class="label" style="margin-top:12px">Pattern Analysis</div>
+        <div id="patternAnalysis" class="pattern-box">-</div>
+
+        <div class="label" style="margin-top:12px">Signal Strength Score</div>
+        <div class="score"><div class="score-bar"><div id="scoreFill" class="score-fill" style="width:0%;">0/100</div></div></div>
+
+        <div class="label" style="margin-top:10px">Trading Decision</div>
+        <div id="decisionBadge" class="decision hold">-</div>
+
+        <div id="smartAdvice" class="advice" style="display:none"></div>
+
+        <div id="aiExplain" class="ai-explain" style="display:none"></div>
+
+        <div class="summary" id="summaryList"></div>
+
+        <div style="margin-top:12px">
+          <div class="label">Risk Management</div>
+          <div class="kv"><div>Stop Loss (Volatility Adjusted)</div><div id="stopLoss">-</div></div>
+          <div class="kv"><div>Target 1</div><div id="target1">-</div></div>
+          <div class="kv"><div>Target 2</div><div id="target2">-</div></div>
+          <div class="kv"><div>Risk:Reward Ratio</div><div id="rrRatio">-</div></div>
+          <div class="kv"><div>Position Size (2% risk)</div><div id="positionSize">-</div></div>
+        </div>
+
+        <div style="margin-top:12px" class="footer">Curated By - BIPLAB BAWALI</div>
+      </div>
+
+      <div class="right">
+        <div class="label">Technical Indicators (Latest)</div>
+        <div class="indicator-grid" id="indicatorGrid"></div>
+
+        <div style="margin-top:12px">
+          <div class="label">Multi-Timeframe</div>
+          <div id="weeklyAnalysis" style="margin-top:8px; padding:8px; background:#f9fafb; border-radius:6px; font-size:13px;"></div>
+        </div>
+
+        <div style="margin-top:12px">
+          <div class="label">Volume</div>
+          <div id="volumeAnalysis" style="margin-top:8px; padding:8px; background:#f9fafb; border-radius:6px; font-size:13px;"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="history-section">
+      <div class="history-header">
+        <div class="label">Search History (Saved)</div>
+        <div>
+          <button id="clearHistoryBtn" class="ghost">🧹 Clear History</button>
+          <button id="exportHistoryCsvBtn" class="ghost">⬇ Export CSV</button>
+        </div>
+      </div>
+      <div id="historyList" class="history-list"><div style="color:#9ca3af;font-style:italic;">No saved analyses yet</div></div>
+    </div>
+
+    <div class="history-section" style="margin-top:12px">
+      <div class="history-header">
+        <div class="label">Watchlist</div>
+        <div><button id="clearWatchBtn" class="ghost">Clear Watchlist</button></div>
+      </div>
+      <div id="watchlist" class="history-list"><div style="color:#9ca3af;font-style:italic;">No stocks added yet</div></div>
+    </div>
+
+    <div class="footer">© 2025 BIPLAB BAWALI – Enhanced Swing Analyzer v11.0</div>
+  </div>
+
+<script>
+/* ---------------------------
+   Utilities & Fetch
+   --------------------------- */
+function allorigins(url) {
+  return "https://dawn-recipe-ee4e.titir95biplab.workers.dev/?url=" + encodeURIComponent(url);
+}
+
+async function fetchYahoo(symbol, interval='1d', range='6mo'){
+  const q = symbol.endsWith('.NS') ? symbol : symbol + '.NS';
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${q}?interval=${interval}&range=${range}`;
+  const prox = allorigins(url);
+  const res = await fetch(prox);
+  if(!res.ok) throw new Error('Network error: ' + res.status);
+  let txt = await res.text();
+  if (txt.startsWith('<') || txt.startsWith('Edge')) {
+    throw new Error('Proxy returned invalid response:\n' + txt.slice(0,80));
+  }
+  const j = JSON.parse(txt);
+
+  if(!j.chart || !j.chart.result || !j.chart.result[0]) throw new Error('No data returned');
+  const result = j.chart.result[0];
+  const quote = result.indicators?.quote?.[0];
+  if(!quote) throw new Error('No quote data');
+  const timestamps = result.timestamp || [];
+  const closes = [], highs = [], lows = [], volumes = [];
+  for(let i=0;i<timestamps.length;i++){
+    if(quote.close[i]!==null && quote.high[i]!==null && quote.low[i]!==null){
+      closes.push(quote.close[i]); highs.push(quote.high[i]); lows.push(quote.low[i]); volumes.push(quote.volume[i]||0);
+    }
+  }
+  return { closes, highs, lows, volumes, meta: result.meta || {} };
+}
+
+/* ---------------------------
+   Indicators
+   --------------------------- */
+function EMA(series, period){ if(!series||series.length<period) return null; const k=2/(period+1); const ema=[series[0]]; for(let i=1;i<series.length;i++) ema.push(series[i]*k + ema[i-1]*(1-k)); return ema[ema.length-1]; }
+function RSI(series, period=14){ if(!series||series.length<=period) return null; let gains=0,losses=0; for(let i=1;i<=period;i++){ const ch=series[i]-series[i-1]; if(ch>0) gains+=ch; else losses+=Math.abs(ch); } let avgG=gains/period, avgL=losses/period; for(let i=period+1;i<series.length;i++){ const ch=series[i]-series[i-1]; if(ch>0){ avgG=(avgG*(period-1)+ch)/period; avgL=(avgL*(period-1))/period; } else { avgG=(avgG*(period-1))/period; avgL=(avgL*(period-1)+Math.abs(ch))/period; } } if(avgL===0) return 100; const rs=avgG/avgL; return 100-(100/(1+rs)); }
+function SMA(arr,period){ if(!arr||arr.length<period) return null; const sl=arr.slice(-period); return sl.reduce((a,b)=>a+b,0)/period; }
+function Bollinger(series,period=20,mult=2){ if(!series||series.length<period) return null; const slice=series.slice(-period); const mean=slice.reduce((a,b)=>a+b,0)/period; const sq=slice.map(x=>Math.pow(x-mean,2)); const varr=sq.reduce((a,b)=>a+b,0)/period; const sd=Math.sqrt(varr); return {upper:mean+mult*sd,middle:mean,lower:mean-mult*sd}; }
+function ATR(highs,lows,closes,period=14){ if(!closes||closes.length<period+1) return null; const trs=[]; for(let i=1;i<closes.length;i++){ const tr=Math.max(highs[i]-lows[i], Math.abs(highs[i]-closes[i-1]), Math.abs(lows[i]-closes[i-1])); trs.push(tr);} if(trs.length<period) return null; let atr=trs.slice(0,period).reduce((a,b)=>a+b,0)/period; for(let i=period;i<trs.length;i++) atr=(atr*(period-1)+trs[i])/period; return atr; }
+function VWAP(prices,volumes,period=20){ if(!prices||prices.length<period) return null; const p=prices.slice(-period), v=volumes.slice(-period); const pv=p.map((x,i)=>x*v[i]); const pvSum=pv.reduce((a,b)=>a+b,0); const vSum=v.reduce((a,b)=>a+b,0); return vSum===0?null:pvSum/vSum; }
+function MACD(series,short=12,long=26,signal=9){ if(!series||series.length<long+signal) return null; function emaArr(arr,per){ const k=2/(per+1); const e=[arr[0]]; for(let i=1;i<arr.length;i++) e.push(arr[i]*k+e[i-1]*(1-k)); return e;} const eShort=emaArr(series,short), eLong=emaArr(series,long); const macdLine=eShort.map((v,i)=>v-eLong[i]); if(macdLine.length<signal) return null; const sLine=emaArr(macdLine,signal); const hist=macdLine.map((v,i)=>v-sLine[i]); return {macd:macdLine[macdLine.length-1], signal:sLine[sLine.length-1], histogram: hist[hist.length-1]}; }
+function Supertrend(highs,lows,closes,period=10,mult=3){ if(!closes||closes.length<period+1) return null; const atr=ATR(highs,lows,closes,period); if(!atr) return null; const hl2=(highs[highs.length-1]+lows[lows.length-1])/2; const upper=hl2+mult*atr, lower=hl2-mult*atr; const price=closes[closes.length-1]; return {upper, lower, trend: price>lower?'bullish':'bearish', value: price>lower?lower:upper}; }
+function analyzeVolume(volumes,period=20){ if(!volumes||volumes.length<period) return null; const recent=volumes.slice(-period); const avg=recent.reduce((a,b)=>a+b,0)/period; const cur=volumes[volumes.length-1]; const prev=volumes[volumes.length-2]||cur; return {avgVolume:avg,currentVolume:cur,volumeTrend:cur>avg?'above-average':'below-average',volumeChange:((cur-prev)/Math.max(1,prev)*100).toFixed(2)}; }
+
+/* ---------------------------
+   NEW: Support & Resistance Detection
+   --------------------------- */
+function findSupportResistance(closes, highs, lows, period = 20) {
+  if(!closes || closes.length < period) return {support: null, resistance: null};
+  
+  const recent = closes.slice(-period);
+  const recentHighs = highs.slice(-period);
+  const recentLows = lows.slice(-period);
+  
+  const pivotHighs = [], pivotLows = [];
+  
+  for(let i = 2; i < recent.length - 2; i++) {
+    if(recentHighs[i] > recentHighs[i-1] && recentHighs[i] > recentHighs[i-2] &&
+       recentHighs[i] > recentHighs[i+1] && recentHighs[i] > recentHighs[i+2]) {
+      pivotHighs.push(recentHighs[i]);
+    }
+    
+    if(recentLows[i] < recentLows[i-1] && recentLows[i] < recentLows[i-2] &&
+       recentLows[i] < recentLows[i+1] && recentLows[i] < recentLows[i+2]) {
+      pivotLows.push(recentLows[i]);
+    }
+  }
+  
+  const resistance = pivotHighs.length > 0 ? 
+    pivotHighs.reduce((a,b) => a+b, 0) / pivotHighs.length : null;
+  const support = pivotLows.length > 0 ? 
+    pivotLows.reduce((a,b) => a+b, 0) / pivotLows.length : null;
+  
+  return { support, resistance, pivotHighs, pivotLows };
+}
+
+/* ---------------------------
+   NEW: Confluence Calculator
+   --------------------------- */
+function calculateConfluence(ctx) {
+  let bullishCount = 0, bearishCount = 0;
+  
+  if(ctx.rsi !== null && ctx.rsi < 30) bullishCount++;
+  if(ctx.rsi !== null && ctx.rsi > 70) bearishCount++;
+  
+  if(ctx.ema50 !== null && ctx.ema200 !== null) {
+    if(ctx.ema50 > ctx.ema200) bullishCount++;
+    if(ctx.ema50 < ctx.ema200) bearishCount++;
+  }
+  
+  if(ctx.macdHist !== null) {
+    if(ctx.macdHist > 0) bullishCount++;
+    if(ctx.macdHist < 0) bearishCount++;
+  }
+  
+  if(ctx.supertrend?.trend === 'bullish') bullishCount++;
+  if(ctx.supertrend?.trend === 'bearish') bearishCount++;
+  
+  if(ctx.vwap && ctx.price) {
+    if(ctx.price > ctx.vwap) bullishCount++;
+    if(ctx.price < ctx.vwap) bearishCount++;
+  }
+  
+  if(ctx.weeklyBull === true) bullishCount++;
+  if(ctx.weeklyBull === false) bearishCount++;
+  
+  const totalSignals = 6;
+  const agreement = Math.max(bullishCount, bearishCount) / totalSignals;
+  
+  return {
+    confluence: agreement,
+    direction: bullishCount > bearishCount ? 'bullish' : 'bearish',
+    bullishCount,
+    bearishCount
+  };
+}
+
+/* ---------------------------
+   ENHANCED: Pattern detection with S/R
+   --------------------------- */
+function detectPatterns(closes, highs, lows){
+  if(!closes||closes.length<20) return "Not enough data for pattern detection.";
+  const price = closes[closes.length-1];
+  const prev = closes.slice(-10);
+  const messages=[];
+  
+  const max1 = Math.max(...prev.slice(0,5));
+  const max2 = Math.max(...prev.slice(5));
+  const min1 = Math.min(...prev.slice(0,5));
+  const min2 = Math.min(...prev.slice(5));
+  
+  if(Math.abs(max1-max2)/Math.max(1,max1) < 0.02 && price < Math.min(max1,max2)) 
+    messages.push("⚠️ Possible Double Top – bearish reversal");
+  if(Math.abs(min1-min2)/Math.max(1,min1) < 0.02 && price > Math.max(min1,min2)) 
+    messages.push("💎 Possible Double Bottom – bullish reversal");
+  
+  const trendHigh = highs[highs.length-1] - highs[Math.max(0, highs.length-5)];
+  const trendLow = lows[lows.length-1] - lows[Math.max(0, lows.length-5)];
+  if(trendHigh<0 && trendLow>0) 
+    messages.push("🔺 Contracting range – potential triangle breakout");
+  
+  const recentHigh = Math.max(...prev);
+  const recentLow = Math.min(...prev);
+  if(price>recentHigh) 
+    messages.push("🚀 Breakout above recent resistance – bullish continuation");
+  if(price<recentLow) 
+    messages.push("📉 Breakdown below recent support – bearish continuation");
+  
+  // NEW: Support/Resistance analysis
+  const sr = findSupportResistance(closes, highs, lows, 30);
+  if(sr.support !== null) {
+    const distToSupport = ((price - sr.support) / price * 100);
+    if(Math.abs(distToSupport) < 2) {
+      messages.push(`📍 Price near support level ₹${sr.support.toFixed(2)} (${distToSupport.toFixed(1)}%)`);
+    }
+  }
+  if(sr.resistance !== null) {
+    const distToResistance = ((price - sr.resistance) / price * 100);
+    if(Math.abs(distToResistance) < 2) {
+      messages.push(`📍 Price near resistance level ₹${sr.resistance.toFixed(2)} (${distToResistance.toFixed(1)}%)`);
+    }
+  }
+  
+  // NEW: Head and Shoulders (simplified)
+  if(prev.length >= 9) {
+    const leftShoulder = Math.max(...prev.slice(0,3));
+    const head = Math.max(...prev.slice(3,6));
+    const rightShoulder = Math.max(...prev.slice(6,9));
+    
+    if(head > leftShoulder * 1.02 && head > rightShoulder * 1.02 &&
+       Math.abs(leftShoulder - rightShoulder) / leftShoulder < 0.03) {
+      messages.push("👤 Potential Head & Shoulders pattern - bearish reversal");
+    }
+  }
+  
+  return messages.length? messages.join("<br>") : "No significant pattern detected.";
+}
+
+/* ---------------------------
+   ENHANCED: Scoring & Decision with Dynamic Weighting
+   --------------------------- */
+function computeScoreAndDecision(ctx){
+  let score=50; const signals=[];
+  
+  // NEW: Dynamic weights based on volatility regime
+  const volatilityMultiplier = ctx.atr && ctx.price ? 
+    (ctx.atr / ctx.price > 0.03 ? 0.8 : 1.2) : 1;
+  
+  const w={
+    trend: Math.round(20 * volatilityMultiplier),
+    momentum: 15,
+    rsi: 15,
+    volatility: 12,
+    support: 10,
+    volume: Math.round(8 * (ctx.volume?.volumeTrend === 'above-average' ? 1.5 : 1)),
+    vwap: 7,
+    weekly: Math.round(13 * volatilityMultiplier)
+  };
+  
+  if(ctx.ema50!==null && ctx.ema200!==null){
+    if(ctx.ema50>ctx.ema200*1.01){ score+=w.trend; signals.push({text:'EMA50 > EMA200 (Bullish structure)',type:'bullish',strength:'strong'}); }
+    else if(ctx.ema50<ctx.ema200*0.99){ score-=w.trend; signals.push({text:'EMA50 < EMA200 (Bearish structure)',type:'bearish',strength:'strong'}); }
+    else signals.push({text:'EMA50 ≈ EMA200 (Consolidation)',type:'neutral',strength:'weak'});
+  }
+  
+  if(ctx.rsi!==null){
+    if(ctx.rsi<30){ score+=w.rsi; signals.push({text:`RSI ${ctx.rsi.toFixed(1)} (Oversold)`,type:'bullish',strength:'strong'}); }
+    else if(ctx.rsi>70){ score-=w.rsi; signals.push({text:`RSI ${ctx.rsi.toFixed(1)} (Overbought)`,type:'bearish',strength:'strong'}); }
+    else if(ctx.rsi>50){ score+=3; signals.push({text:`RSI ${ctx.rsi.toFixed(1)} (Bullish zone)`,type:'bullish',strength:'weak'}); }
+    else { score-=3; signals.push({text:`RSI ${ctx.rsi.toFixed(1)} (Bearish zone)`,type:'bearish',strength:'weak'}); }
+  }
+  
+  if(ctx.macdHist!==null){
+    const s = Math.abs(ctx.macdHist)>5?'strong':'moderate';
+    if(ctx.macdHist>0){ score+=w.momentum*(s==='strong'?1:0.6); signals.push({text:'MACD histogram positive',type:'bullish',strength:s}); }
+    else { score-=w.momentum*(s==='strong'?1:0.6); signals.push({text:'MACD histogram negative',type:'bearish',strength:s}); }
+  }
+  
+  if(ctx.bb!==null && ctx.price!==null){
+    if(ctx.price<ctx.bb.lower){ score+=w.volatility; signals.push({text:'Price below lower BB (Mean reversion)',type:'bullish',strength:'moderate'}); }
+    else if(ctx.price>ctx.bb.upper){ score-=w.volatility; signals.push({text:'Price above upper BB (Over-extension)',type:'bearish',strength:'moderate'}); }
+    else signals.push({text:'Price within BB range',type:'neutral',strength:'weak'});
+  }
+  
+  if(ctx.supertrend!==null){
+    if(ctx.supertrend.trend==='bullish'){ score+=w.support; signals.push({text:'Supertrend bullish',type:'bullish',strength:'moderate'}); }
+    else { score-=w.support; signals.push({text:'Supertrend bearish',type:'bearish',strength:'moderate'}); }
+  }
+  
+  if(ctx.vwap!==null && ctx.price!==null){
+    const diff=((ctx.price-ctx.vwap)/ctx.vwap*100);
+    if(diff>1){ score+=w.vwap; signals.push({text:`Price ${diff.toFixed(1)}% above VWAP`,type:'bullish',strength:'weak'}); }
+    else if(diff<-1){ score-=w.vwap; signals.push({text:`Price ${Math.abs(diff).toFixed(1)}% below VWAP`,type:'bearish',strength:'weak'}); }
+    else signals.push({text:'Price near VWAP',type:'neutral',strength:'weak'});
+  }
+  
+  if(ctx.volume!==null){
+    if(ctx.volume.volumeTrend==='above-average'){ 
+      if(score>50) score+=w.volume; 
+      else score-=w.volume*0.5; 
+      signals.push({text:`Volume ${ctx.volume.volumeTrend}`,type: score>50?'bullish':'bearish',strength:'moderate'}); 
+    }
+    else { signals.push({text:'Volume below average',type:'neutral',strength:'weak'}); score*=0.95; }
+  }
+  
+  if(ctx.weeklyBull!==null){ 
+    if(ctx.weeklyBull===true){ score+=w.weekly; signals.push({text:'Weekly trend bullish',type:'bullish',strength:'strong'}); } 
+    else { score-=w.weekly; signals.push({text:'Weekly trend bearish',type:'bearish',strength:'strong'}); } 
+  }
+
+  if(ctx.patternBias && typeof ctx.patternBias==='number' && ctx.patternBias!==0){
+    score += ctx.patternBias;
+    signals.push({text:`Pattern bias ${ctx.patternBias>0?'+':''}${ctx.patternBias}`, type: ctx.patternBias>0?'bullish':'bearish', strength:'moderate'});
+  }
+  
+  // NEW: Confluence scoring
+  const confluence = calculateConfluence(ctx);
+  if(confluence.confluence > 0.66) {
+    const boost = 5;
+    if(confluence.direction === 'bullish' && score > 50) score += boost;
+    if(confluence.direction === 'bearish' && score < 50) score -= boost;
+    signals.push({
+      text: `High confluence: ${confluence.bullishCount} bullish vs ${confluence.bearishCount} bearish signals`,
+      type: confluence.direction,
+      strength: 'strong'
+    });
+  }
+
+  score = Math.max(0, Math.min(100, Math.round(score)));
+  let decisionLabel = 'HOLD';
+  if(score>=75) decisionLabel='STRONG BUY';
+  else if(score>=60) decisionLabel='MODERATE BUY';
+  else if(score<=25) decisionLabel='STRONG SELL';
+  else if(score<=40) decisionLabel='MODERATE SELL';
+  else decisionLabel='HOLD';
+  
+  return {score, decisionLabel, signals, confluence};
+}
+
+/* ---------------------------
+   ENHANCED: AI Explain with Confluence
+   --------------------------- */
+function generateAIExplanation(ctx, decision) {
+  const parts = [];
+  if(ctx.patternSummary) parts.push(`Pattern detected: ${ctx.patternSummary}.`);
+  
+  if(ctx.confluence) {
+    parts.push(`Confluence analysis shows ${ctx.confluence.bullishCount} bullish and ${ctx.confluence.bearishCount} bearish signals agreeing.`);
+  }
+  
+  if(ctx.rsi!==null){
+    if(ctx.rsi<35) parts.push(`RSI is low (${ctx.rsi.toFixed(0)}), indicating buying exhaustion/support.`);
+    else if(ctx.rsi>65) parts.push(`RSI is elevated (${ctx.rsi.toFixed(0)}), indicating overbought pressure.`);
+    else parts.push(`RSI at ${ctx.rsi.toFixed(0)} shows neutral momentum.`);
+  }
+  
+  if(ctx.macdHist!==null){
+    if(ctx.macdHist>0) parts.push(`MACD histogram positive (${ctx.macdHist.toFixed(3)}), momentum favors upside.`);
+    else parts.push(`MACD histogram negative (${ctx.macdHist.toFixed(3)}), momentum favors downside.`);
+  }
+  
+  if(ctx.ema50!==null && ctx.ema200!==null){
+    if(ctx.ema50>ctx.ema200) parts.push('EMA50 > EMA200 – structural trend is bullish.');
+    else parts.push('EMA50 < EMA200 – structural trend is bearish.');
+  }
+  
+  if(ctx.volume && ctx.volume.volumeTrend) {
+    parts.push(`Volume is ${ctx.volume.volumeTrend}, which ${ctx.volume.volumeTrend==='above-average'?'supports':'weakens'} the signal.`);
+  }
+  
+  if(ctx.volatilityRegime) {
+    parts.push(`Market is in ${ctx.volatilityRegime} volatility regime.`);
+  }
+  
+  parts.push(`Final verdict: ${decision}.`);
+  
+  const conf = ctx.score>=75?0.9:ctx.score>=60?0.75:ctx.score<=25?0.9:ctx.score<=40?0.6:0.5;
+  parts.push(`Confidence: ${(conf*100).toFixed(0)}% based on indicator confluence.`);
+  
+  return { text: parts.join(' '), confidence: conf };
+}
+
+/* ---------------------------
+   History & Watchlist
+   --------------------------- */
+function getSavedHistory(){ try{ const h=localStorage.getItem('esa_history_v11_0'); return h?JSON.parse(h):[] }catch{return []} }
+function saveSavedHistory(list){ try{ localStorage.setItem('esa_history_v11_0', JSON.stringify(list)); }catch{} }
+function addSavedRecord(rec){ const list=getSavedHistory(); list.unshift(rec); if(list.length>800) list.length=800; saveSavedHistory(list); renderSavedHistory(); }
+function clearSavedHistory(){ if(confirm('Clear saved history?')){ localStorage.removeItem('esa_history_v11_0'); renderSavedHistory(); } }
+
+function getWatchlist(){ try{ return JSON.parse(localStorage.getItem('esa_watchlist_v11_0')||'[]'); }catch{return []} }
+function saveWatchlist(list){ localStorage.setItem('esa_watchlist_v11_0', JSON.stringify(list)); }
+function toggleWatch(symbol){ if(!symbol) return alert('Enter a symbol first'); const list=getWatchlist(); const exists=list.includes(symbol); const newList = exists? list.filter(x=>x!==symbol) : [symbol, ...list]; saveWatchlist(newList); renderWatchlist(); alert(exists? `${symbol} removed from watchlist` : `${symbol} added to watchlist`); }
+function clearWatchlist(){ if(confirm('Clear watchlist?')){ localStorage.removeItem('esa_watchlist_v11_0'); renderWatchlist(); } }
+
+function renderSavedHistory(){
+  const container = document.getElementById('historyList');
+  const list = getSavedHistory();
+  if(!list || list.length===0){ container.innerHTML = '<div style="color:#9ca3af;font-style:italic;">No saved analyses yet</div>'; return; }
+  container.innerHTML = '';
+  list.forEach(r=>{
+    const el = document.createElement('div'); el.className='history-item';
+    el.innerHTML = `<div style="font-weight:700">${r.symbol}</div><div style="font-size:12px;color:#6b7280">${new Date(r.date).toLocaleString()} • ${r.score}/100 • ${r.decision}</div><div style="margin-top:6px;color:#374151">${r.pattern||''}</div>`;
+    el.addEventListener('click', ()=>{ document.getElementById('symbol').value = r.symbol; runAnalysis(); });
+    container.appendChild(el);
+  });
+}
+
+function renderWatchlist(){
+  const container = document.getElementById('watchlist');
+  const list = getWatchlist();
+  if(!list || list.length===0){ container.innerHTML = '<div style="color:#9ca3af;font-style:italic;">No stocks added yet</div>'; return; }
+  container.innerHTML = '';
+  list.forEach(s=>{
+    const el = document.createElement('div'); el.className='history-item';
+    el.innerHTML = `<div style="font-weight:700">${s}</div>`;
+    el.addEventListener('click', ()=>{ document.getElementById('symbol').value = s; runAnalysis(); });
+    container.appendChild(el);
+  });
+}
+
+function exportSavedHistoryCSV(){
+  const rows = getSavedHistory();
+  if(!rows || rows.length===0){ alert('No history to export'); return; }
+  const header = ['symbol','date','score','decision','pattern','advice','confidence'];
+  const csv = [header.join(',')].concat(rows.map(r=>{
+    const safe = v => `"${(r[v]||'').toString().replace(/"/g,'""')}"`;
+    return [safe('symbol'), safe('date'), r.score, safe('decision'), safe('pattern'), safe('advice'), r.confidence||''].join(',');
+  })).join('\n');
+  const blob = new Blob([csv], {type:'text/csv'}); const url = URL.createObjectURL(blob);
+  const a=document.createElement('a'); a.href=url; a.download = `ESA_history_${new Date().toISOString().slice(0,10)}.csv`; a.click(); URL.revokeObjectURL(url);
+}
+
+/* ---------------------------
+   PDF Export
+   --------------------------- */
+async function exportCurrentToPDF(){
+  if(document.getElementById('outputArea').style.display === 'none'){ alert('Run an analysis first'); return; }
+  const clone = document.createElement('div');
+  clone.style.width='800px'; clone.style.background='#fff'; clone.style.padding='18px'; clone.style.color='#071026';
+  clone.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <div><h2 style="margin:0">Enhanced Swing Analyzer v11.0</h2><div style="font-size:12px;color:#333;margin-top:6px">Curated By - BIPLAB BAWALI</div></div>
+      <div style="text-align:right;font-size:12px;color:#333">${document.getElementById('outTicker').textContent || ''}<br>${new Date().toLocaleString()}</div>
+    </div>
+    <hr style="margin:12px 0;border:none;border-top:1px solid #eee" />
+    <div id="pdfBody"></div>
+    <hr style="margin:12px 0;border:none;border-top:1px solid #eee" />
+    <div style="font-size:11px;color:#666">Curated By - BIPLAB BAWALI • Enhanced Swing Analyzer v11.0</div>
+  `;
+  const pdfBody = clone.querySelector('#pdfBody');
+  pdfBody.innerHTML = `
+    <h3>Summary</h3>
+    <div><strong>Price:</strong> ${document.getElementById('outPrice').textContent}</div>
+    <div><strong>Decision:</strong> ${document.getElementById('decisionBadge').textContent}</div>
+    <div><strong>Score:</strong> ${document.getElementById('scoreFill').textContent}</div>
+    <h3 style="margin-top:12px">Pattern Analysis</h3>
+    <div style="background:#f7f9fc;padding:8px;border-radius:6px">${document.getElementById('patternAnalysis').innerHTML}</div>
+    <h3 style="margin-top:12px">Smart Advice</h3>
+    <div style="background:#f0fdf4;padding:8px;border-radius:6px">${document.getElementById('smartAdvice').innerHTML}</div>
+    <h3 style="margin-top:12px">AI Explanation</h3>
+    <div style="background:#fff7ed;padding:8px;border-radius:6px">${document.getElementById('aiExplain').innerHTML}</div>
+    <h3 style="margin-top:12px">Indicators</h3>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+      ${Array.from(document.querySelectorAll('#indicatorGrid .ind-item')).map(it=>`<div style="background:#fff;padding:8px;border-radius:6px;border:1px solid #eee"><div style="font-size:12px;color:#666">${it.querySelector('.ind-label').textContent}</div><div style="font-weight:600;margin-top:6px">${it.querySelector('.ind-value').textContent}</div><div style="font-size:12px;color:#666;margin-top:6px">${it.querySelector('.ind-signal')?it.querySelector('.ind-signal').textContent:''}</div></div>`).join('')}
+    </div>
+    <h3 style="margin-top:12px">Risk Management</h3>
+    <div><strong>Stop Loss:</strong> ${document.getElementById('stopLoss').textContent} &nbsp; <strong>T1:</strong> ${document.getElementById('target1').textContent} &nbsp; <strong>T2:</strong> ${document.getElementById('target2').textContent}</div>
+  `;
+  document.body.appendChild(clone);
+  try{
+    const canvas = await html2canvas(clone, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+    const imgData = canvas.toDataURL('image/jpeg', 0.95);
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ unit:'pt', format:'a4' });
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const imgWidth = pageWidth - 40;
+    const imgHeight = canvas.height * imgWidth / canvas.width;
+    pdf.addImage(imgData, 'JPEG', 20, 20, imgWidth, imgHeight);
+    const filename = `${document.getElementById('outTicker').textContent.replace(/\s+/g,'_')}_Analysis_${new Date().toISOString().slice(0,10)}.pdf`;
+    pdf.save(filename);
+  }catch(e){ console.error(e); alert('PDF export failed: ' + e.message); } finally { clone.remove(); }
+}
+
+/* ---------------------------
+   Indicator color helpers
+   --------------------------- */
+function colorForRSI(rsi){
+  if(rsi===null || rsi===undefined || isNaN(rsi)) return {color: 'var(--neutral)', textColor:'var(--neutral)'};
+  if(rsi > 60) return {color: 'var(--good)', textColor:'var(--good)'};
+  if(rsi < 40) return {color: 'var(--bad)', textColor:'var(--bad)'};
+  return {color: 'var(--neutral)', textColor:'var(--neutral)'};
+}
+function colorForMACD(hist){
+  if(hist===null || hist===undefined || isNaN(hist)) return {color:'var(--neutral)', textColor:'var(--neutral)'};
+  if(hist > 0) return {color:'var(--good)', textColor:'var(--good)'};
+  if(hist < 0) return {color:'var(--bad)', textColor:'var(--bad)'};
+  return {color:'var(--neutral)', textColor:'var(--neutral)'};
+}
+function colorForEMA(ema50, ema200){
+  if(ema50===null || ema200===null) return {color:'var(--neutral)', textColor:'var(--neutral)'};
+  if(ema50 > ema200) return {color:'var(--good)', textColor:'var(--good)'};
+  if(ema50 < ema200) return {color:'var(--bad)', textColor:'var(--bad)'};
+  return {color:'var(--neutral)', textColor:'var(--neutral)'};
+}
+function colorForVWAP(price, vwap){
+  if(!vwap || !price) return {color:'var(--neutral)', textColor:'var(--neutral)'};
+  const diff = (price - vwap);
+  if(diff > 0) return {color:'var(--good)', textColor:'var(--good)'};
+  if(diff < 0) return {color:'var(--bad)', textColor:'var(--bad)'};
+  return {color:'var(--neutral)', textColor:'var(--neutral)'};
+}
+function colorForSupertrend(trend){
+  if(!trend) return {color:'var(--neutral)', textColor:'var(--neutral)'};
+  if(trend==='bullish') return {color:'var(--good)', textColor:'var(--good)'};
+  if(trend==='bearish') return {color:'var(--bad)', textColor:'var(--bad)'};
+  return {color:'var(--neutral)', textColor:'var(--neutral)'};
+}
+function colorForBBPosition(price, bb){
+  if(!bb || !price) return {color:'var(--neutral)', textColor:'var(--neutral)'};
+  if(price < bb.lower) return {color:'var(--good)', textColor:'var(--good)'};
+  if(price > bb.upper) return {color:'var(--bad)', textColor:'var(--bad)'};
+  return {color:'var(--neutral)', textColor:'var(--neutral)'};
+}
+
+/* ---------------------------
+   Helpers
+   --------------------------- */
+function setStatus(s){ document.getElementById('status').textContent = s; }
+function formatINR(x){ if(x===null||x===undefined||isNaN(x)) return '-'; return '₹' + Number(x).toFixed(2); }
+
+/* ---------------------------
+   Initialization
+   --------------------------- */
+document.addEventListener('DOMContentLoaded', ()=>{
+  document.getElementById('analyzeBtn').addEventListener('click', runAnalysis);
+  document.getElementById('toggleLearn').addEventListener('click', ()=> {
+    const lp = document.getElementById('learnPanel');
+    const showing = lp.style.display === 'block';
+    lp.style.display = showing ? 'none' : 'block';
+    document.getElementById('toggleLearn').textContent = showing ? '📘 Learn' : '📘 Hide Learn';
+    if(!showing) activateLearnTab('beginner');
+  });
+  document.querySelectorAll('.learn-tab-btn').forEach(b=> b.addEventListener('click', ()=> activateLearnTab(b.dataset.tab)));
+  document.getElementById('watchBtn').addEventListener('click', ()=> { const s=document.getElementById('symbol').value.trim().toUpperCase(); toggleWatch(s); renderWatchlist(); });
+  document.getElementById('exportPdfBtn').addEventListener('click', exportCurrentToPDF);
+  document.getElementById('exportCsvBtn').addEventListener('click', exportSavedHistoryCSV);
+  document.getElementById('clearHistoryBtn').addEventListener('click', clearSavedHistory);
+  document.getElementById('exportHistoryCsvBtn').addEventListener('click', exportSavedHistoryCSV);
+  document.getElementById('clearWatchBtn').addEventListener('click', clearWatchlist);
+
+  renderSavedHistory();
+  renderWatchlist();
+
+  document.getElementById('symbol').addEventListener('keypress', (e)=> { if(e.key==='Enter') runAnalysis(); });
+});
+
+function activateLearnTab(tabId){
+  document.querySelectorAll('.learn-tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab===tabId));
+  document.querySelectorAll('.learn-content').forEach(c => c.classList.toggle('active', c.id===tabId));
+}
+
+/* ---------------------------
+   MAIN ANALYSIS ROUTINE (ENHANCED)
+   --------------------------- */
+async function runAnalysis(){
+  const symbolRaw = document.getElementById('symbol').value.trim().toUpperCase();
+  if(!symbolRaw) return alert('Please enter a stock symbol (e.g., RELIANCE)');
+  const lookback = document.getElementById('lookback').value;
+  const range = lookback === '365' ? '1y' : '6mo';
+  const ticker = symbolRaw.endsWith('.NS') ? symbolRaw.slice(0,-3) : symbolRaw;
+
+  const analyzeBtn = document.getElementById('analyzeBtn');
+  analyzeBtn.classList.add('analyzing');
+  analyzeBtn.disabled = true;
+  document.getElementById('clearHistoryBtn').classList.remove('disabled');
+  document.getElementById('clearWatchBtn').classList.remove('disabled');
+
+  setStatus('Fetching data...');
+  document.getElementById('outputArea').style.display = 'none';
+
+  try{
+    const [daily, weekly] = await Promise.all([ 
+      fetchYahoo(symbolRaw, '1d', range), 
+      fetchYahoo(symbolRaw, '1wk', '2y') 
+    ]);
+    
+    setStatus('Calculating indicators... (1/3)');
+    
+    const { closes, highs, lows, volumes } = daily;
+    if(!closes || closes.length < 50) throw new Error('Insufficient data (need 50+ days): ' + (closes?.length || 0));
+    
+    const price = closes[closes.length-1];
+    const prevPrice = closes[closes.length-2] || price;
+    const change = price - prevPrice;
+    const changePct = (change / Math.max(0.0001, prevPrice)) * 100;
+
+    const rsi = RSI(closes,14);
+    const ema50 = EMA(closes,50);
+    const ema200 = EMA(closes,200);
+    const macd = MACD(closes,12,26,9);
+    const bb = Bollinger(closes,20,2);
+    const vwap = VWAP(closes,volumes,20);
+    const atr = ATR(highs,lows,closes,14);
+    const supertrend = Supertrend(highs,lows,closes,10,3);
+    const volumeData = analyzeVolume(volumes,20);
+
+    setStatus('Analyzing patterns... (2/3)');
+
+    const weeklyCloses = weekly.closes || [];
+    const weeklyEma50 = weeklyCloses.length>=50?EMA(weeklyCloses,50):null;
+    const weeklyEma200 = weeklyCloses.length>=200?EMA(weeklyCloses,200):null;
+    const weeklyBull = (weeklyEma50 && weeklyEma200) ? weeklyEma50 > weeklyEma200 : null;
+
+    const patternText = detectPatterns(closes, highs, lows);
+    let patternBias = 0, patternSummary = '';
+    if(patternText.includes('Double Top')){ patternBias -= 15; patternSummary = 'Double Top (bearish)'; }
+    if(patternText.includes('Double Bottom')){ patternBias += 15; patternSummary = 'Double Bottom (bullish)'; }
+    if(patternText.includes('Breakout above')){ patternBias += 10; patternSummary = patternSummary || 'Breakout above resistance'; }
+    if(patternText.includes('Breakdown below')){ patternBias -= 10; patternSummary = patternSummary || 'Breakdown below support'; }
+    if(patternText.includes('Contracting range')){ patternSummary = patternSummary || 'Contracting range (watch breakout)'; }
+    if(patternText.includes('Head & Shoulders')){ patternBias -= 12; patternSummary = patternSummary || 'Head & Shoulders (bearish)'; }
+
+    setStatus('Computing signals... (3/3)');
+
+    // NEW: Volatility regime detection
+    const volatilityRatio = atr / price;
+    const volatilityRegime = volatilityRatio > 0.03 ? 'high' : volatilityRatio < 0.015 ? 'low' : 'normal';
+
+    const ctx = { 
+      price, rsi, ema50, ema200, 
+      macdHist: macd?.histogram, 
+      bb, vwap, atr, supertrend, 
+      volume: volumeData, weeklyBull, 
+      patternBias, patternSummary,
+      volatilityRegime
+    };
+    
+    const { score, decisionLabel, signals, confluence } = computeScoreAndDecision(ctx);
+    ctx.score = score;
+    ctx.confluence = confluence;
+
+    // ENHANCED: Volatility-adjusted risk management
+    const isBuy = decisionLabel.includes('BUY'), isSell = decisionLabel.includes('SELL');
+    const atrValue = atr || price * 0.02;
+    const isHighVol = volatilityRatio > 0.03;
+
+    const stopMultiplier = isHighVol ? 2.0 : 1.5;
+    const target1Multiplier = isHighVol ? 2.5 : 2.0;
+    const target2Multiplier = isHighVol ? 5.0 : 4.0;
+
+    const stopLoss = isBuy ? price - stopMultiplier * atrValue : 
+                     isSell ? price + stopMultiplier * atrValue : null;
+    const target1 = isBuy ? price + target1Multiplier * atrValue : 
+                    isSell ? price - target1Multiplier * atrValue : null;
+    const target2 = isBuy ? price + target2Multiplier * atrValue : 
+                    isSell ? price - target2Multiplier * atrValue : null;
+
+    const rrRatio = stopLoss ? Math.abs((target1 - price) / (stopLoss - price)).toFixed(2) : null;
+
+    // NEW: Position sizing
+    const accountRisk = 0.02;
+    const stopDistance = stopLoss ? Math.abs(price - stopLoss) : 0;
+    const positionSize = stopDistance > 0 ? ((accountRisk / (stopDistance / price)) * 100).toFixed(2) : null;
+
+    // Render outputs
+    document.getElementById('outTicker').textContent = ticker + ' (NSE)';
+    document.getElementById('outPrice').textContent = `Price: ${formatINR(price)} ${change>=0?'▲':'▼'} ${formatINR(Math.abs(change))} (${changePct>=0?'+':''}${changePct.toFixed(2)}%)`;
+    document.getElementById('outPrice').style.color = change>=0? 'var(--good)' : 'var(--bad)';
+    document.getElementById('patternAnalysis').innerHTML = patternText + (patternSummary ? `<div style="margin-top:6px;font-size:12px;color:#6b7280">Bias: ${patternSummary}</div>` : '');
+
+    // Score bar
+    const scoreFill = document.getElementById('scoreFill');
+    scoreFill.style.width = score + '%';
+    scoreFill.textContent = score + '/100';
+    if(score >= 60) scoreFill.style.background = 'linear-gradient(90deg,var(--good),#10b981)';
+    else if(score <= 40) scoreFill.style.background = 'linear-gradient(90deg,var(--bad),#ef4444)';
+    else scoreFill.style.background = 'linear-gradient(90deg,#d97706,#f59e0b)';
+
+    // Decision badge
+    const badge = document.getElementById('decisionBadge');
+    badge.textContent = decisionLabel; badge.className = 'decision';
+    if(decisionLabel==='STRONG BUY') badge.classList.add('strong-buy');
+    else if(decisionLabel==='MODERATE BUY') badge.classList.add('mod-buy');
+    else if(decisionLabel==='MODERATE SELL') badge.classList.add('mod-sell');
+    else if(decisionLabel==='STRONG SELL') badge.classList.add('strong-sell');
+    else badge.classList.add('hold');
+
+    // Smart advice
+    const confidence = Math.max(0.35, Math.min(0.95, (score/100)));
+    const riskLevel = score>=75?2:score>=60?3:score>40?4:5;
+    let adviceText = '';
+    if(decisionLabel.includes('BUY')){
+      adviceText = `📈 Suggestion: Consider <strong>BUY</strong> near ${formatINR(price)}. Stop-loss: ${formatINR(stopLoss)}. Targets: ${formatINR(target1)} and ${formatINR(target2)}. Risk level: ${riskLevel}/5. Confidence: ${(confidence*100).toFixed(0)}%. ${isHighVol ? '⚠️ High volatility - wider stops applied.' : ''}`;
+    } else if(decisionLabel.includes('SELL')){
+      adviceText = `📉 Suggestion: Consider <strong>SELL/SHORT</strong> near ${formatINR(price)}. Stop-loss: ${formatINR(stopLoss)}. Targets: ${formatINR(target1)} and ${formatINR(target2)}. Risk level: ${riskLevel}/5. Confidence: ${(confidence*100).toFixed(0)}%. ${isHighVol ? '⚠️ High volatility - wider stops applied.' : ''}`;
+    } else {
+      adviceText = `⏸ Market neutral. Recommend waiting for clear breakout or reversal confirmed by volume and indicators. Confidence: ${(confidence*100).toFixed(0)}%.`;
+    }
+    document.getElementById('smartAdvice').innerHTML = adviceText;
+    document.getElementById('smartAdvice').style.display = 'block';
+
+    // AI Explain
+    const expl = generateAIExplanation({...ctx, patternSummary}, decisionLabel);
+    document.getElementById('aiExplain').innerHTML = `<strong>Why this verdict?</strong><div style="margin-top:6px">${expl.text}</div>`;
+    document.getElementById('aiExplain').style.display = 'block';
+
+    // Signals summary
+    let summaryHTML = `<div style="margin-bottom:8px"><strong>Signals:</strong> ${score} points</div>`;
+    summaryHTML += signals.map(s=>`<div style="margin:6px 0">${s.type==='bullish'?'🟢':s.type==='bearish'?'🔴':'🟡'} ${s.text}</div>`).join('');
+    document.getElementById('summaryList').innerHTML = summaryHTML;
+
+    // Risk blocks
+    document.getElementById('stopLoss').textContent = formatINR(stopLoss);
+    document.getElementById('target1').textContent = formatINR(target1);
+    document.getElementById('target2').textContent = formatINR(target2);
+    document.getElementById('rrRatio').textContent = rrRatio ? rrRatio + ':1' : '-';
+    document.getElementById('positionSize').textContent = positionSize ? positionSize + '%' : '-';
+
+    // Indicator grid
+    const indicators = [
+      {label:'RSI (14)', value: rsi? rsi.toFixed(2):'-', type:'rsi'},
+      {label:'EMA 50', value: formatINR(ema50), type:'ema'},
+      {label:'EMA 200', value: formatINR(ema200), type:'ema'},
+      {label:'MACD hist', value: macd? macd.histogram.toFixed(4):'-', type:'macd'},
+      {label:'BB upper', value: formatINR(bb?.upper), type:'bb'},
+      {label:'BB lower', value: formatINR(bb?.lower), type:'bb'},
+      {label:'Supertrend', value: supertrend? formatINR(supertrend.value):'-', type:'supertrend'},
+      {label:'VWAP (20)', value: vwap? formatINR(vwap):'-', type:'vwap'},
+      {label:'ATR (14)', value: atr? atr.toFixed(4):'-', type:'atr'}
+    ];
+    
+    const grid = indicators.map(ind => {
+      let colorStyle = 'color:var(--neutral)';
+      if(ind.type==='rsi'){
+        const c = colorForRSI(rsi); colorStyle = `color:${c.textColor};font-weight:600`;
+      } else if(ind.type==='macd'){
+        const c = colorForMACD(macd?.histogram); colorStyle = `color:${c.textColor};font-weight:600`;
+      } else if(ind.type==='ema'){
+        const c = colorForEMA(ema50, ema200); colorStyle = `color:${c.textColor};font-weight:600`;
+      } else if(ind.type==='vwap'){
+        const c = colorForVWAP(price, vwap); colorStyle = `color:${c.textColor};font-weight:600`;
+      } else if(ind.type==='supertrend'){
+        const c = colorForSupertrend(supertrend?.trend); colorStyle = `color:${c.textColor};font-weight:600`;
+      } else if(ind.type==='bb'){
+        const c = colorForBBPosition(price, bb); colorStyle = `color:${c.textColor};font-weight:600`;
+      } else {
+        colorStyle = 'color:var(--neutral);font-weight:600';
+      }
+      return `<div class="ind-item"><div class="ind-label">${ind.label}</div><div class="ind-value" style="${colorStyle}">${ind.value}</div><div class="ind-signal"></div></div>`;
+    }).join('');
+    document.getElementById('indicatorGrid').innerHTML = grid;
+
+    // Weekly & volume
+    document.getElementById('weeklyAnalysis').innerHTML = `<div style="font-weight:700;margin-bottom:6px">Weekly Trend: ${weeklyBull===null?'Insufficient data':weeklyBull?'🟢 BULLISH':'🔴 BEARISH'}</div><div style="font-size:12px;color:#6b7280">Weekly EMA50: ${formatINR(weeklyEma50)}<br>Weekly EMA200: ${formatINR(weeklyEma200)}</div>`;
+    document.getElementById('volumeAnalysis').innerHTML = `<div style="font-weight:700;margin-bottom:6px">Volume: ${volumeData?volumeData.volumeTrend.toUpperCase():'-'}</div><div style="font-size:12px;color:#6b7280">Current: ${volumeData?volumeData.currentVolume.toLocaleString():'-'}<br>20-day Avg: ${volumeData?volumeData.avgVolume.toFixed(0):'-'}<br>Change: ${volumeData?volumeData.volumeChange:'-'}%</div>`;
+
+    // Show output
+    document.getElementById('outputArea').style.display = 'grid';
+    setStatus('✓ Analysis Complete');
+
+    // Save to history if checked
+    const saveChecked = document.getElementById('saveHistoryToggle').checked;
+    if(saveChecked){
+      const record = {
+        symbol: ticker,
+        date: (new Date()).toISOString(),
+        score,
+        decision: decisionLabel,
+        pattern: patternSummary || '',
+        advice: adviceText,
+        confidence: confidence
+      };
+      addSavedRecord(record);
+      document.getElementById('saveHistoryToggle').checked = false;
+    }
+
+  }catch(err){
+    console.error(err);
+    
+    // ENHANCED: Better error messages
+    let userMessage = 'Error: ';
+    
+    if(err.message.includes('Proxy returned invalid')) {
+      userMessage += 'Unable to fetch data. The symbol might be delisted or invalid.\n\nTry popular symbols like:\n• RELIANCE\n• TCS\n• INFY\n• HDFCBANK\n• WIPRO';
+    } else if(err.message.includes('No data returned')) {
+      userMessage += 'No data available for this symbol.\n\nPlease ensure it\'s a valid NSE symbol.\n\nExamples: RELIANCE, TCS, INFY';
+    } else if(err.message.includes('Insufficient data')) {
+      userMessage += 'Not enough historical data available.\n\nThis stock might be:\n• Newly listed\n• Suspended from trading\n• Delisted\n\nMinimum 50 days of data required.';
+    } else if(err.message.includes('Network error')) {
+      userMessage += 'Network connection failed.\n\nPlease check your internet connection and try again.';
+    } else {
+      userMessage += err.message + '\n\n💡 Tip: Use NSE symbols without .NS suffix\nExamples: RELIANCE, TCS, INFY, HDFCBANK';
+    }
+    
+    alert(userMessage);
+    setStatus('❌ Error');
+    
+  } finally {
+    analyzeBtn.classList.remove('analyzing');
+    analyzeBtn.disabled = false;
+  }
+}
+</script>
+</body>
+</html>
