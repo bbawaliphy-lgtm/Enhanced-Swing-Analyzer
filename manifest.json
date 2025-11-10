@@ -1,7 +1,7 @@
 {
-  "name": "Enhanced Swing Analyzer",
-  "short_name": "ESA",
-  "description": "A hybrid offline-first + Firebase-powered swing analysis tool by Biplab Bawali.",
+  "name": "Enhanced Swing Analyzer v12.1",
+  "short_name": "ESA v12.1",
+  "description": "Cloud-synced swing analysis tool with cross-device support by Biplab Bawali.",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#071028",
@@ -11,12 +11,25 @@
     {
       "src": "./icon-192.png",
       "sizes": "192x192",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any maskable"
     },
     {
       "src": "./icon-512.png",
       "sizes": "512x512",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "scope": "./",
+  "categories": ["finance", "productivity"],
+  "shortcuts": [
+    {
+      "name": "Analyze Stock",
+      "short_name": "Analyze",
+      "description": "Quick stock analysis",
+      "url": "./index.html",
+      "icons": [{ "src": "./icon-192.png", "sizes": "192x192" }]
     }
   ]
 }
