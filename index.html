@@ -131,7 +131,7 @@
   
   try {
     // Use shared document instead of per-user
-    const docRef = doc(db, 'shared/settings');
+    const docRef = doc(db, "shared/global/settings");
     const docSnap = await getDoc(docRef);
     if (docSnap.exists()) {
       const data = docSnap.data();
@@ -154,7 +154,7 @@
   
   try {
     // Use shared document instead of per-user
-    const docRef = doc(db, 'shared/settings');
+    const docRef = doc(db, "shared/global/settings");
     await setDoc(docRef, {list, ts: Date.now(), syncedAt: Date.now()});
     console.log('✅ Watchlist saved to SHARED cloud');
     localStorage.setItem(LAST_SYNC_KEY, Date.now().toString());
@@ -757,7 +757,7 @@ async function addSavedRecordHybrid(rec){
       try {
         const db = window._esa_firebase.db;
         const { addDoc, collection } = await import('https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js');
-       const pathCol = 'shared/history';
+       const pathCol = 'shared/global/history';
         await addDoc(collection(db, pathCol), {...rec, syncedAt: Date.now()});
         console.log('✅ Immediately synced:', rec.symbol);
         return;
