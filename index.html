@@ -179,36 +179,23 @@
   };
 
   // Auto sign-in and sync on load
-  // Auto sign-in and sync on load
-onAuthStateChanged(auth, async (user) => {
-  if (user) {
-    console.log('🔐 Auth state: signed in', user.uid);
-    updateSyncStatus('syncing', '🔄 Syncing...');
-    
-    // Initial sync on load
-    await flushSyncQueue(user.uid);
-    
-    // Wait for functions to be available, then fetch and render
-    const waitForFunctions = setInterval(async () => {
-      if (window.getSavedHistoryHybrid && window.getWatchlistHybrid) {
-        clearInterval(waitForFunctions);
-        
-        console.log('🔄 Loading data from cloud...');
+  onAuthStateChanged(auth, async (user) => {
+    if (user) {
+      console.log('🔐 Auth state: signed in', user.uid);
+      updateSyncStatus('syncing', '🔄 Syncing...');
+      
+      // Initial sync on load
+      await flushSyncQueue(user.uid);
+      
+      // Fetch and merge cloud data
+      if (window.getSavedHistoryHybrid) {
         await window.getSavedHistoryHybrid();
-        await window.getWatchlistHybrid();
-        
-        // Force render after load
-        if (window.renderSavedHistory) window.renderSavedHistory();
-        if (window.renderWatchlist) window.renderWatchlist();
-        
-        console.log('✅ Data loaded and rendered');
       }
-    }, 100);
-    
-    // Timeout after 5 seconds
-    setTimeout(() => clearInterval(waitForFunctions), 5000);
-    
-    updateSyncStatus('synced', '✅ Synced');
+      if (window.getWatchlistHybrid) {
+        await window.getWatchlistHybrid();
+      }
+      
+      updateSyncStatus('synced', '✅ Synced');
     } else {
       console.log('🔓 Not signed in, attempting...');
       updateSyncStatus('syncing', '🔄 Connecting...');
@@ -734,132 +721,75 @@ const HISTORY_KEY = 'esa_history_v12';
 const WATCH_KEY = 'esa_watchlist_v12';
 
 // IMPROVED: Better merge logic with deduplication
-// IMPROVED: Immediate sync with fallback queue
 async function addSavedRecordHybrid(rec){
   const list = lsGet(HISTORY_KEY);
-  
-  // Add timestamp if not present
-  if(!rec.ts) rec.ts = Date.now();
-  
   list.unshift(rec);
   if(list.length>800) list.length=800;
   lsSet(HISTORY_KEY, list);
   renderSavedHistory();
-  
-  // Try immediate sync first
-  if(window.esaCloud && navigator.onLine){
+  if(window.esaCloud){
+    window.esaCloud.enqueueForSync('history', {...rec, ts: Date.now()});
     const auth = window._esa_firebase?.auth;
     if(auth?.currentUser) {
-      try {
-        const db = window._esa_firebase.db;
-        const { addDoc, collection } = await import('https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js');
-        const pathCol = `users/${auth.currentUser.uid}/history`;
-        await addDoc(collection(db, pathCol), {...rec, syncedAt: Date.now()});
-        console.log('✅ Immediately synced:', rec.symbol);
-        return;
-      } catch(e) {
-        console.warn('⚠️ Immediate sync failed, enqueueing:', e);
-      }
+      await window.esaCloud.flushSyncQueue(auth.currentUser.uid);
     }
-  }
-  
-  // Fallback to queue
-  if(window.esaCloud) {
-    window.esaCloud.enqueueForSync('history', rec);
   }
 }
 
 // IMPROVED: Fetch and merge with proper deduplication
 async function getSavedHistoryHybrid(){
   const local = lsGet(HISTORY_KEY);
-  
   if(!(window.esaCloud && navigator.onLine)) {
     console.log('Using local history only');
-    renderSavedHistory();
     return local;
   }
-  
   try{
     const auth = window._esa_firebase?.auth;
     if(auth?.currentUser){
       const uid = auth.currentUser.uid;
       const cloudList = await window.esaCloud.fetchCloudList(uid, 'history');
       
-      // Better deduplication: prioritize cloud data with syncedAt
+      // Better deduplication: use symbol+date as key
       const merged = new Map();
-      
-      // Add local first
-      local.forEach(r => {
-        const key = `${r.symbol}_${new Date(r.date).toDateString()}`;
-        merged.set(key, r);
-      });
-      
-      // Override with cloud data (cloud is source of truth)
-      cloudList.forEach(r => {
-        const key = `${r.symbol}_${new Date(r.date).toDateString()}`;
-        if(r.syncedAt) {
-          merged.set(key, r); // Cloud data wins
-        } else if(!merged.has(key)) {
+      [...local, ...cloudList].forEach(r => {
+        const key = `${r.symbol}_${r.date}`;
+        if(!merged.has(key) || r.syncedAt) {
           merged.set(key, r);
         }
       });
       
       const result = Array.from(merged.values())
-        .sort((a, b) => new Date(b.date || b.ts) - new Date(a.date || a.ts))
+        .sort((a, b) => new Date(b.date) - new Date(a.date))
         .slice(0, 800);
       
       lsSet(HISTORY_KEY, result);
-      console.log(`✅ Merged ${result.length} history records (${cloudList.length} from cloud, ${local.length} local)`);
-      
-      renderSavedHistory();
+      console.log(`✅ Merged ${result.length} history records`);
       return result;
     }
-  }catch(e){ 
-    console.warn('getSavedHistoryHybrid error:', e); 
-    renderSavedHistory();
-  }
+  }catch(e){ console.warn('getSavedHistoryHybrid error:', e); }
   return local;
 }
 
-// IMPROVED: Watchlist with cloud priority
+// IMPROVED: Watchlist with proper cloud sync
 async function getWatchlistHybrid(){
   const local = JSON.parse(localStorage.getItem(WATCH_KEY) || '[]');
-  
   if(!(window.esaCloud && navigator.onLine)) {
-    console.log('📱 Using local watchlist only');
-    renderWatchlist();
+    console.log('Using local watchlist only');
     return local;
   }
-  
   try{
     const auth = window._esa_firebase?.auth;
     if(auth?.currentUser){
       const uid = auth.currentUser.uid;
       const cloudList = await window.esaCloud.fetchWatchlist(uid);
       
-      // Cloud is source of truth
-      let merged = cloudList.length > 0 ? [...cloudList] : [...local];
-      
-      // Add any local items not in cloud
-      local.forEach(item => {
-        if(!merged.includes(item)) {
-          merged.push(item);
-        }
-      });
-      
-      // Remove duplicates
-      merged = [...new Set(merged)];
-      
+      // Merge and deduplicate
+      const merged = [...new Set([...local, ...cloudList])];
       localStorage.setItem(WATCH_KEY, JSON.stringify(merged));
-      console.log(`✅ Merged watchlist: ${merged.length} items (${cloudList.length} from cloud, ${local.length} local)`);
-      
-      renderWatchlist();
+      console.log(`✅ Merged watchlist: ${merged.length} items`);
       return merged;
     }
-  }catch(e){ 
-    console.warn('⚠️ getWatchlistHybrid error:', e); 
-    renderWatchlist();
-  }
+  }catch(e){ console.warn('getWatchlistHybrid error:', e); }
   return local;
 }
 
@@ -970,14 +900,11 @@ document.addEventListener('DOMContentLoaded', ()=>{
 
   document.getElementById('symbol').addEventListener('keypress', (e)=> { if(e.key==='Enter') runAnalysis(); });
   
-  // Initial load - render immediately then sync
-renderSavedHistory();
-renderWatchlist();
-
-setTimeout(async () => {
-  await getSavedHistoryHybrid();
-  await getWatchlistHybrid();
-}, 2000);
+  // Initial load
+  setTimeout(async () => {
+    await getSavedHistoryHybrid();
+    await getWatchlistHybrid();
+  }, 1000);
 });
 
 function activateLearnTab(tabId){
@@ -1171,8 +1098,6 @@ async function runAnalysis(){
 
 async function renderSavedHistory(){
   const container = document.getElementById('historyList');
-  container.innerHTML = '<div style="color:#9ca3af;font-style:italic;">⏳ Loading history...</div>';
-  
   const list = await getSavedHistoryHybrid();
   if(!list || list.length===0){ 
     container.innerHTML = '<div style="color:#9ca3af;font-style:italic;">No saved analyses yet</div>'; 
@@ -1182,9 +1107,8 @@ async function renderSavedHistory(){
   list.slice(0, 50).forEach(r=>{
     const el = document.createElement('div'); 
     el.className='history-item';
-    const syncIcon = r.syncedAt || r.fromCloud ? '☁️' : '📱';
-const syncLabel = r.syncedAt || r.fromCloud ? 'Cloud' : 'Local';
-el.innerHTML = `<div style="font-weight:700">${syncIcon} ${r.symbol} <span style="font-size:10px;color:#9ca3af;font-weight:400">(${syncLabel})</span></div><div style="font-size:12px;color:#6b7280">${new Date(r.date).toLocaleString()} • ${r.score}/100 • ${r.decision}</div><div style="margin-top:6px;color:#374151">${r.pattern||''}</div>`;
+    const syncIcon = r.syncedAt ? '☁️' : '📱';
+    el.innerHTML = `<div style="font-weight:700">${syncIcon} ${r.symbol}</div><div style="font-size:12px;color:#6b7280">${new Date(r.date).toLocaleString()} • ${r.score}/100 • ${r.decision}</div><div style="margin-top:6px;color:#374151">${r.pattern||''}</div>`;
     el.addEventListener('click', ()=>{ document.getElementById('symbol').value = r.symbol; runAnalysis(); });
     container.appendChild(el);
   });
@@ -1192,8 +1116,6 @@ el.innerHTML = `<div style="font-weight:700">${syncIcon} ${r.symbol} <span style
 
 async function renderWatchlist(){
   const container = document.getElementById('watchlist');
-  container.innerHTML = '<div style="color:#9ca3af;font-style:italic;">⏳ Loading watchlist...</div>';
-  
   const list = await getWatchlistHybrid();
   if(!list || list.length===0){ 
     container.innerHTML = '<div style="color:#9ca3af;font-style:italic;">No stocks added yet</div>'; 
