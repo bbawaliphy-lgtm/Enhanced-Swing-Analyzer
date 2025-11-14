@@ -61,11 +61,8 @@ self.addEventListener('fetch', (event) => {
     request.method !== 'GET'
   ) {
     // Network only for these requests
-    event.respondWith(
-  fetch(request).catch(() => caches.match(request))
-);
-return;
-
+    event.respondWith(fetch(request));
+    return;
   }
   
   // Cache-first strategy for app resources
