@@ -1,7 +1,7 @@
 {
   "name": "Enhanced Swing Analyzer v12.1",
   "short_name": "ESA v12.1",
-  "description": "Cloud-synced swing analysis tool with cross-device support by Biplab Bawali.",
+  "description": "Offline-first swing analysis tool by Biplab Bawali.",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#071028",
@@ -22,14 +22,5 @@
     }
   ],
   "scope": "./",
-  "categories": ["finance", "productivity"],
-  "shortcuts": [
-    {
-      "name": "Analyze Stock",
-      "short_name": "Analyze",
-      "description": "Quick stock analysis",
-      "url": "./index.html",
-      "icons": [{ "src": "./icon-192.png", "sizes": "192x192" }]
-    }
-  ]
+  "categories": ["finance", "productivity"]
 }
