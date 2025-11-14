@@ -179,23 +179,36 @@
   };
 
   // Auto sign-in and sync on load
-  onAuthStateChanged(auth, async (user) => {
-    if (user) {
-      console.log('🔐 Auth state: signed in', user.uid);
-      updateSyncStatus('syncing', '🔄 Syncing...');
-      
-      // Initial sync on load
-      await flushSyncQueue(user.uid);
-      
-      // Fetch and merge cloud data
-      if (window.getSavedHistoryHybrid) {
+  // Auto sign-in and sync on load
+onAuthStateChanged(auth, async (user) => {
+  if (user) {
+    console.log('🔐 Auth state: signed in', user.uid);
+    updateSyncStatus('syncing', '🔄 Syncing...');
+    
+    // Initial sync on load
+    await flushSyncQueue(user.uid);
+    
+    // Wait for functions to be available, then fetch and render
+    const waitForFunctions = setInterval(async () => {
+      if (window.getSavedHistoryHybrid && window.getWatchlistHybrid) {
+        clearInterval(waitForFunctions);
+        
+        console.log('🔄 Loading data from cloud...');
         await window.getSavedHistoryHybrid();
-      }
-      if (window.getWatchlistHybrid) {
         await window.getWatchlistHybrid();
+        
+        // Force render after load
+        if (window.renderSavedHistory) window.renderSavedHistory();
+        if (window.renderWatchlist) window.renderWatchlist();
+        
+        console.log('✅ Data loaded and rendered');
       }
-      
-      updateSyncStatus('synced', '✅ Synced');
+    }, 100);
+    
+    // Timeout after 5 seconds
+    setTimeout(() => clearInterval(waitForFunctions), 5000);
+    
+    updateSyncStatus('synced', '✅ Synced');
     } else {
       console.log('🔓 Not signed in, attempting...');
       updateSyncStatus('syncing', '🔄 Connecting...');
