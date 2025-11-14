@@ -1,198 +1,151 @@
-/* service-worker.js
-   Optimized PWA service worker for Enhanced Swing Analyzer
-   - Network-first for navigation (index.html)
-   - Cache-first (stale-while-revalidate) for assets
-   - Network-only for Firebase/Google/Yahoo/workers.dev
-   - Cache housekeeping + size limits
-*/
-
-const VERSION = 'v12.1';
-const CACHE_NAME = `esa-cache-${VERSION}`;
-const ASSET_CACHE = `esa-assets-${VERSION}`;
-const OFFLINE_URL = '/index.html'; // used as fallback for navigation
-const MAX_ASSET_ENTRIES = 60; // limit asset cache entries
-
-// assets to pre-cache (static, safe)
-const PRECACHE_URLS = [
-  '/manifest.json',
-  '/icon-192.png',
-  '/icon-512.png',
-  // Do not aggressively precache index.html to avoid staleness — we still include it as fallback below
+const CACHE_NAME = 'esa-cache-v12.1';
+const OFFLINE_URL = './index.html';
+const urlsToCache = [
+  './index.html',
+  './manifest.json',
+  './icon-192.png',
+  './icon-512.png',
+  'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js',
+  'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'
 ];
 
-// helper: trim cache to max entries
-async function trimCache(cacheName, maxEntries) {
-  try {
-    const cache = await caches.open(cacheName);
-    const keys = await cache.keys();
-    if (keys.length > maxEntries) {
-      const deleteCount = keys.length - maxEntries;
-      for (let i = 0; i < deleteCount; i++) {
-        await cache.delete(keys[i]);
-      }
-    }
-  } catch (e) {
-    console.warn('[SW] trimCache error', e);
-  }
-}
-
-// helper: is external API that we shouldn't cache
-function isNoCacheRequest(url) {
-  try {
-    const u = new URL(url);
-    const origin = u.origin || '';
-    return origin.includes('firebase') ||
-           origin.includes('google') ||
-           origin.includes('yahoo') ||
-           origin.includes('workers.dev');
-  } catch (e) {
-    return false;
-  }
-}
-
-// Install: pre-cache static assets (not index.html)
+// Install event - cache resources
 self.addEventListener('install', (event) => {
-  console.log('[Service Worker] Install', VERSION);
-  self.skipWaiting();
+  console.log('[Service Worker] Installing v12.1...');
+  self.skipWaiting(); // Activate worker immediately
+  
   event.waitUntil(
-    caches.open(ASSET_CACHE).then(cache => {
-      return cache.addAll(PRECACHE_URLS).catch(err => {
-        console.warn('[Service Worker] Precache failed', err);
+    caches.open(CACHE_NAME).then((cache) => {
+      console.log('[Service Worker] Caching app shell');
+      return cache.addAll(urlsToCache).catch(err => {
+        console.warn('[Service Worker] Cache addAll failed:', err);
+        // Continue even if some resources fail to cache
+        return Promise.resolve();
       });
     })
   );
 });
 
-// Activate: cleanup old caches
+// Activate event - clean up old caches
 self.addEventListener('activate', (event) => {
-  console.log('[Service Worker] Activate', VERSION);
+  console.log('[Service Worker] Activating v12.1...');
+  
   event.waitUntil(
-    (async () => {
-      const names = await caches.keys();
-      await Promise.all(names.map(async (name) => {
-        if (![CACHE_NAME, ASSET_CACHE].includes(name) && name.startsWith('esa-')) {
-          console.log('[Service Worker] Deleting old cache:', name);
-          await caches.delete(name);
-        }
-      }));
-      // Claim clients immediately so updated SW controls the page
-      await self.clients.claim();
-    })()
+    caches.keys().then((cacheNames) => {
+      return Promise.all(
+        cacheNames
+          .filter((name) => name !== CACHE_NAME && name.startsWith('esa-cache-'))
+          .map((name) => {
+            console.log('[Service Worker] Deleting old cache:', name);
+            return caches.delete(name);
+          })
+      );
+    })
   );
+  
+  // Take control of all pages immediately
+  self.clients.claim();
 });
 
-// Fetch handler: network-first for navigation, network-only for Firebase/3rd-party APIs, cache-first for other assets
+// Fetch event - serve from cache, fallback to network
 self.addEventListener('fetch', (event) => {
   const { request } = event;
-  const requestURL = request.url;
-
-  // Only handle GET requests here
-  if (request.method !== 'GET') {
-    return; // let browser handle non-GET (POST/PUT) normally
-  }
-
-  // 1) Network-only for Firebase / Google / Yahoo / workers.dev
-  if (isNoCacheRequest(requestURL)) {
+  const url = new URL(request.url);
+  
+  // Don't cache Firebase, API calls, or external CDN live requests
+  if (
+    url.origin.includes('firebase') ||
+    url.origin.includes('google') ||
+    url.origin.includes('yahoo') ||
+    url.origin.includes('workers.dev') ||
+    request.method !== 'GET'
+  ) {
+    // Network only for these requests
     event.respondWith(
-      fetch(request).catch(err => {
-        // If network fails, provide a safe fallback response (JSON or text) depending on accept header
-        if (request.headers.get('accept')?.includes('application/json')) {
-          return new Response(JSON.stringify({ error: 'offline' }), {
-            status: 503,
-            headers: { 'Content-Type': 'application/json' }
-          });
-        }
-        return new Response('Network unavailable', {
-          status: 503,
-          statusText: 'Service Unavailable',
-          headers: { 'Content-Type': 'text/plain' }
-        });
-      })
-    );
-    return;
-  }
+  fetch(request).catch(() => caches.match(request))
+);
+return;
 
-  // 2) Navigation requests (pages) — network-first to avoid stale index.html
-  if (request.mode === 'navigate' || (request.headers.get('accept') || '').includes('text/html')) {
-    event.respondWith(
-      (async () => {
-        try {
-          // Try network first
-          const networkResponse = await fetch(request);
-          // Update fallback HTML cache for offline fallback
-          const cache = await caches.open(CACHE_NAME);
-          cache.put(OFFLINE_URL, networkResponse.clone()).catch(() => {});
-          return networkResponse;
-        } catch (err) {
-          // Network failed — serve cached index.html fallback if available
-          const cached = await caches.match(OFFLINE_URL);
-          if (cached) return cached;
-          // Try cached asset index.html under asset cache
-          const cachedAsset = await caches.open(ASSET_CACHE).then(c => c.match(OFFLINE_URL));
-          if (cachedAsset) return cachedAsset;
-          // Final fallback: a minimal HTML response
-          return new Response('<!doctype html><title>Offline</title><meta name="viewport" content="width=device-width,initial-scale=1"><h1>Offline</h1><p>The application is offline.</p>', {
-            headers: { 'Content-Type': 'text/html' },
-            status: 200
-          });
-        }
-      })()
-    );
-    return;
   }
-
-  // 3) Cache-first (stale-while-revalidate) for other static assets (CSS, JS, images, libs)
+  
+  // Cache-first strategy for app resources
   event.respondWith(
-    caches.open(ASSET_CACHE).then(async (cache) => {
-      const cachedResponse = await cache.match(request);
-      const networkFetch = fetch(request)
-        .then(response => {
-          // only cache successful 200 responses and same-origin or CORS-friendly responses
-          if (response && response.status === 200) {
-            cache.put(request, response.clone()).catch(() => {});
-            // trim asset cache
-            trimCache(ASSET_CACHE, MAX_ASSET_ENTRIES);
+    caches.match(request).then((cachedResponse) => {
+      if (cachedResponse) {
+        console.log('[Service Worker] Serving from cache:', request.url);
+        return cachedResponse;
+      }
+      
+      // Not in cache, fetch from network
+      return fetch(request)
+        .then((networkResponse) => {
+          // Only cache successful responses
+          if (
+            !networkResponse ||
+            networkResponse.status !== 200 ||
+            networkResponse.type !== 'basic'
+          ) {
+            return networkResponse;
           }
-          return response;
+          
+          // Clone and cache the response
+          const responseToCache = networkResponse.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(request, responseToCache);
+            console.log('[Service Worker] Cached new resource:', request.url);
+          });
+          
+          return networkResponse;
         })
-        .catch(() => null);
-
-      // Return cached if exists immediately, but update in background
-      return cachedResponse || networkFetch.then(res => res || cachedResponse);
+        .catch((error) => {
+          console.error('[Service Worker] Fetch failed:', error);
+          
+          // Return offline page for navigation requests
+          if (request.mode === 'navigate') {
+            return caches.match(OFFLINE_URL);
+          }
+          
+          // For other requests, return a generic error response
+          return new Response('Offline - resource not available', {
+            status: 503,
+            statusText: 'Service Unavailable',
+            headers: new Headers({
+              'Content-Type': 'text/plain'
+            })
+          });
+        });
     })
   );
 });
 
-// Listen for messages from clients (skipWaiting, clear cache)
+// Listen for messages from the app
 self.addEventListener('message', (event) => {
-  if (!event.data) return;
-  const { type } = event.data;
-  if (type === 'SKIP_WAITING') {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
     self.skipWaiting();
-  } else if (type === 'CLEAR_CACHE') {
+  }
+  
+  if (event.data && event.data.type === 'CLEAR_CACHE') {
     event.waitUntil(
-      (async () => {
-        const keys = await caches.keys();
-        await Promise.all(keys.map(k => caches.delete(k)));
-        console.log('[Service Worker] All caches cleared on request');
-      })()
+      caches.keys().then((cacheNames) => {
+        return Promise.all(
+          cacheNames.map((name) => caches.delete(name))
+        );
+      }).then(() => {
+        console.log('[Service Worker] All caches cleared');
+      })
     );
   }
 });
 
-// Background sync placeholder (app still manages queue)
+// Background sync for offline data (future enhancement)
 self.addEventListener('sync', (event) => {
   if (event.tag === 'sync-analysis') {
+    console.log('[Service Worker] Background sync triggered');
     event.waitUntil(
-      (async () => {
-        // Note: best-effort trigger; actual sync logic lives in the app
-        const allClients = await clients.matchAll({ includeUncontrolled: true });
-        for (const c of allClients) {
-          c.postMessage({ type: 'BACKGROUND_SYNC_TRIGGERED' });
-        }
-      })()
+      // Could trigger cloud sync here
+      Promise.resolve()
     );
   }
 });
 
-console.log('[Service Worker] Loaded', VERSION);
+console.log('[Service Worker] v12.1 loaded');
