@@ -79,14 +79,15 @@
       console.log(`📤 Flushing ${q.length} items to cloud...`);
       
       for (const item of q) {
-        try {
-          const pathCol = `users/${uid}/${item.col}`;
-          await addDoc(collection(db, pathCol), {...item.docObj, syncedAt: Date.now()});
-          console.log('✅ Synced:', item.col, item.docObj.symbol || item.docObj.list);
-        } catch (e) { 
-          console.warn('⚠️ Sync item failed:', e); 
-        }
-      }
+  try {
+    // Use shared collection instead of per-user
+    const pathCol = `shared/${item.col}`;
+    await addDoc(collection(db, pathCol), {...item.docObj, syncedAt: Date.now()});
+    console.log('✅ Synced to SHARED:', item.col, item.docObj.symbol || item.docObj.list);
+  } catch (e) { 
+    console.warn('⚠️ Sync item failed:', e); 
+  }
+}
       
       localStorage.removeItem(SYNC_QUEUE_KEY);
       localStorage.setItem(LAST_SYNC_KEY, Date.now().toString());
@@ -105,60 +106,63 @@
 
   // Fetch cloud records with deduplication
   async function fetchCloudList(uid, col) {
-    if (!navigator.onLine) {
-      console.log('⚠️ Offline - using local data');
-      return [];
-    }
-    
-    try {
-      const pathCol = `users/${uid}/${col}`;
-      const q = query(collection(db, pathCol), orderBy('ts', 'desc'), limit(500));
-      const snap = await getDocs(q);
-      const data = snap.docs.map(d => ({id: d.id, ...d.data()}));
-      console.log(`📥 Fetched ${data.length} ${col} records from cloud`);
-      return data;
-    } catch(e) { 
-      console.warn('fetchCloudList error:', e); 
-      return []; 
-    }
+  if (!navigator.onLine) {
+    console.log('⚠️ Offline - using local data');
+    return [];
   }
+  
+  try {
+    // Use shared collection instead of per-user
+    const pathCol = `shared/${col}`;
+    const q = query(collection(db, pathCol), orderBy('ts', 'desc'), limit(500));
+    const snap = await getDocs(q);
+    const data = snap.docs.map(d => ({id: d.id, ...d.data()}));
+    console.log(`📥 Fetched ${data.length} ${col} records from SHARED cloud`);
+    return data;
+  } catch(e) { 
+    console.warn('fetchCloudList error:', e); 
+    return []; 
+  }
+}
 
   // Fetch and merge watchlist
   async function fetchWatchlist(uid) {
-    if (!navigator.onLine) return [];
-    
-    try {
-      const docRef = doc(db, `users/${uid}/settings/watchlist`);
-      const docSnap = await getDoc(docRef);
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        console.log('📥 Fetched watchlist from cloud:', data.list);
-        return data.list || [];
-      }
-      return [];
-    } catch(e) {
-      console.warn('fetchWatchlist error:', e);
-      return [];
+  if (!navigator.onLine) return [];
+  
+  try {
+    // Use shared document instead of per-user
+    const docRef = doc(db, 'shared/settings');
+    const docSnap = await getDoc(docRef);
+    if (docSnap.exists()) {
+      const data = docSnap.data();
+      console.log('📥 Fetched watchlist from SHARED cloud:', data.list);
+      return data.list || [];
     }
+    return [];
+  } catch(e) {
+    console.warn('fetchWatchlist error:', e);
+    return [];
   }
+}
 
   // Save watchlist to cloud
   async function saveWatchlistToCloud(uid, list) {
-    if (!navigator.onLine) {
-      enqueueForSync('watchlist', {list, ts: Date.now()});
-      return;
-    }
-    
-    try {
-      const docRef = doc(db, `users/${uid}/settings/watchlist`);
-      await setDoc(docRef, {list, ts: Date.now(), syncedAt: Date.now()});
-      console.log('✅ Watchlist saved to cloud');
-      localStorage.setItem(LAST_SYNC_KEY, Date.now().toString());
-    } catch(e) {
-      console.warn('saveWatchlistToCloud error:', e);
-      enqueueForSync('watchlist', {list, ts: Date.now()});
-    }
+  if (!navigator.onLine) {
+    enqueueForSync('watchlist', {list, ts: Date.now()});
+    return;
   }
+  
+  try {
+    // Use shared document instead of per-user
+    const docRef = doc(db, 'shared/settings');
+    await setDoc(docRef, {list, ts: Date.now(), syncedAt: Date.now()});
+    console.log('✅ Watchlist saved to SHARED cloud');
+    localStorage.setItem(LAST_SYNC_KEY, Date.now().toString());
+  } catch(e) {
+    console.warn('saveWatchlistToCloud error:', e);
+    enqueueForSync('watchlist', {list, ts: Date.now()});
+  }
+}
 
   window.esaCloud = {
     signIn: async () => {
@@ -753,7 +757,7 @@ async function addSavedRecordHybrid(rec){
       try {
         const db = window._esa_firebase.db;
         const { addDoc, collection } = await import('https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js');
-        const pathCol = `users/${auth.currentUser.uid}/history`;
+       const pathCol = 'shared/history';
         await addDoc(collection(db, pathCol), {...rec, syncedAt: Date.now()});
         console.log('✅ Immediately synced:', rec.symbol);
         return;
