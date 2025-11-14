@@ -1,6 +1,8 @@
-const CACHE_NAME = 'esa-cache-v12.1';
+// Minimal, robust PWA Service Worker - cache app shell, network-first for external APIs
+const CACHE_NAME = 'esa-cache-v1';
 const OFFLINE_URL = './index.html';
-const urlsToCache = [
+const ASSETS_TO_CACHE = [
+  './',
   './index.html',
   './manifest.json',
   './icon-192.png',
@@ -9,140 +11,77 @@ const urlsToCache = [
   'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'
 ];
 
-// Install event - cache resources
-self.addEventListener('install', (event) => {
-  console.log('[Service Worker] Installing v12.1...');
-  self.skipWaiting(); // Activate worker immediately
-  
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      console.log('[Service Worker] Caching app shell');
-      return cache.addAll(urlsToCache).catch(err => {
-        console.warn('[Service Worker] Cache addAll failed:', err);
-        // Continue even if some resources fail to cache
+// Install: pre-cache shell
+self.addEventListener('install', (evt) => {
+  self.skipWaiting();
+  evt.waitUntil(
+    caches.open(CACHE_NAME).then(cache => {
+      return cache.addAll(ASSETS_TO_CACHE).catch(() => {
+        // tolerate failures
         return Promise.resolve();
       });
     })
   );
 });
 
-// Activate event - clean up old caches
-self.addEventListener('activate', (event) => {
-  console.log('[Service Worker] Activating v12.1...');
-  
-  event.waitUntil(
-    caches.keys().then((cacheNames) => {
-      return Promise.all(
-        cacheNames
-          .filter((name) => name !== CACHE_NAME && name.startsWith('esa-cache-'))
-          .map((name) => {
-            console.log('[Service Worker] Deleting old cache:', name);
-            return caches.delete(name);
-          })
-      );
-    })
+// Activate: cleanup old caches
+self.addEventListener('activate', (evt) => {
+  evt.waitUntil(
+    caches.keys().then(keys => Promise.all(
+      keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k))
+    ))
   );
-  
-  // Take control of all pages immediately
   self.clients.claim();
 });
 
-// Fetch event - serve from cache, fallback to network
-self.addEventListener('fetch', (event) => {
-  const { request } = event;
-  const url = new URL(request.url);
-  
-  // Don't cache Firebase, API calls, or external CDN live requests
-  if (
-    url.origin.includes('firebase') ||
-    url.origin.includes('google') ||
-    url.origin.includes('yahoo') ||
-    url.origin.includes('workers.dev') ||
-    request.method !== 'GET'
-  ) {
-    // Network only for these requests
-    event.respondWith(fetch(request));
-    return;
-  }
-  
-  // Cache-first strategy for app resources
-  event.respondWith(
-    caches.match(request).then((cachedResponse) => {
-      if (cachedResponse) {
-        console.log('[Service Worker] Serving from cache:', request.url);
-        return cachedResponse;
-      }
-      
-      // Not in cache, fetch from network
-      return fetch(request)
-        .then((networkResponse) => {
-          // Only cache successful responses
-          if (
-            !networkResponse ||
-            networkResponse.status !== 200 ||
-            networkResponse.type !== 'basic'
-          ) {
-            return networkResponse;
-          }
-          
-          // Clone and cache the response
-          const responseToCache = networkResponse.clone();
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(request, responseToCache);
-            console.log('[Service Worker] Cached new resource:', request.url);
-          });
-          
-          return networkResponse;
-        })
-        .catch((error) => {
-          console.error('[Service Worker] Fetch failed:', error);
-          
-          // Return offline page for navigation requests
-          if (request.mode === 'navigate') {
-            return caches.match(OFFLINE_URL);
-          }
-          
-          // For other requests, return a generic error response
-          return new Response('Offline - resource not available', {
-            status: 503,
-            statusText: 'Service Unavailable',
-            headers: new Headers({
-              'Content-Type': 'text/plain'
-            })
-          });
-        });
-    })
-  );
-});
+// Fetch: cache-first for app shell, network-first for API requests (Yahoo proxy)
+self.addEventListener('fetch', (evt) => {
+  const req = evt.request;
+  const url = new URL(req.url);
 
-// Listen for messages from the app
-self.addEventListener('message', (event) => {
-  if (event.data && event.data.type === 'SKIP_WAITING') {
-    self.skipWaiting();
-  }
-  
-  if (event.data && event.data.type === 'CLEAR_CACHE') {
-    event.waitUntil(
-      caches.keys().then((cacheNames) => {
-        return Promise.all(
-          cacheNames.map((name) => caches.delete(name))
-        );
-      }).then(() => {
-        console.log('[Service Worker] All caches cleared');
+  // Network-first for the Yahoo proxy or external API calls (so data isn't stale)
+  if (url.hostname.includes('titir95biplab.workers.dev') || url.hostname.includes('query1.finance.yahoo.com')) {
+    evt.respondWith(
+      fetch(req).then(res => {
+        // optionally cache but keep response direct
+        return res;
+      }).catch(() => {
+        // fallback to cache if available
+        return caches.match(req).then(r => r || new Response('Offline', {status: 503}));
       })
     );
+    return;
   }
-});
 
-// Background sync for offline data (future enhancement)
-self.addEventListener('sync', (event) => {
-  if (event.tag === 'sync-analysis') {
-    console.log('[Service Worker] Background sync triggered');
-    event.waitUntil(
-      // Could trigger cloud sync here
-      Promise.resolve()
+  // For navigation and app shell - cache-first
+  if (req.mode === 'navigate' || req.destination === 'document' || req.url.endsWith('index.html')) {
+    evt.respondWith(
+      caches.match(req).then(cached => {
+        return cached || fetch(req).then(network => {
+          caches.open(CACHE_NAME).then(cache => cache.put(req, network.clone()));
+          return network;
+        }).catch(() => caches.match(OFFLINE_URL));
+      })
     );
+    return;
   }
-});
 
-console.log('[Service Worker] v12.1 loaded');
+  // For other GET resources - try cache, then network, then fallback
+  if (req.method === 'GET') {
+    evt.respondWith(
+      caches.match(req).then(cached => {
+        return cached || fetch(req).then(network => {
+          // Only store same-origin static resources
+          if (network && network.status === 200 && network.type === 'basic') {
+            caches.open(CACHE_NAME).then(cache => cache.put(req, network.clone()));
+          }
+          return network;
+        }).catch(() => new Response('Offline - resource not available', { status: 503 }));
+      })
+    );
+    return;
+  }
+
+  // Default: network
+  evt.respondWith(fetch(req));
+});
