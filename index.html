@@ -239,7 +239,33 @@ function renderHistory(){
     const d = new Date(item.date);
     const row = document.createElement('div');
     row.className = 'history-item';
-    row.innerHTML = `<div style="display:flex;flex-direction:column;align-items:flex-start"><strong>${item.symbol}</strong><div style="font-size:11px;color:#6b7280">${d.toLocaleString()}</div></div><div style="font-size:12px;color:#6b7280">▶</div>`;
+    const dec = item.meta?.decision ?? 'HOLD';
+const score = item.meta?.score ?? null;
+const priceStr = item.meta?.price ? ('₹' + item.meta.price.toFixed(2)) : '-';
+
+row.innerHTML = `
+  <div style="display:flex;flex-direction:column;align-items:flex-start">
+      
+      <div style="display:flex;align-items:center;gap:6px">
+        <strong>${item.symbol}</strong>
+        <span style="padding:2px 6px;border-radius:6px;font-size:11px;${scoreBadgeColor(score)}">
+          ${decisionEmoji(dec)} ${score !== null ? score : '-'}
+        </span>
+      </div>
+
+      <div style="font-size:12px;color:#334155;margin-top:2px">
+        Price: ${priceStr}
+      </div>
+
+      <div style="font-size:11px;color:#6b7280;margin-top:2px">
+        ${d.toLocaleString()}
+      </div>
+  </div>
+
+  <div style="font-size:12px;color:#6b7280">▶</div>
+`;
+
+
     row.addEventListener('click', ()=> { document.getElementById('symbol').value = item.symbol; runAnalysis(); });
     el.appendChild(row);
   });
@@ -544,6 +570,23 @@ function colorForMACD(hist){
   if(hist === null || isNaN(hist)) return { color: 'var(--neutral)' };
   return hist > 0 ? { color: 'var(--good)' } : { color: 'var(--bad)' };
 }
+function scoreBadgeColor(score){
+  if(score >= 75) return 'background:#0f5132;color:#d1fae5';
+  if(score >= 60) return 'background:#14532d;color:#d1fae5';
+  if(score <= 25) return 'background:#450a0a;color:#ffe4e6';
+  if(score <= 40) return 'background:#7f1d1d;color:#ffe4e6';
+  return 'background:#7c5e03;color:#fff7cc'; // HOLD
+}
+
+function decisionEmoji(dec){
+  if(dec==='STRONG BUY') return '📈';
+  if(dec==='MODERATE BUY') return '🔼';
+  if(dec==='HOLD') return '⚖️';
+  if(dec==='MODERATE SELL') return '🔽';
+  if(dec==='STRONG SELL') return '📉';
+  return '';
+}
+
 
 /* ---------------------------
    Main UI actions & runAnalysis
