@@ -10,244 +10,204 @@
 
 <!-- Firebase & App (module) -->
 <script type="module">
-  import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js';
-  import { getAuth, signInAnonymously, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js';
-  import { getFirestore, collection, addDoc, getDocs, query, orderBy, limit, doc, setDoc, getDoc } from 'https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js';
+/* -------------------------------------------------------
+   1. Firebase Initialization
+------------------------------------------------------- */
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js';
+import { getAuth, signInAnonymously, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js';
+import {
+  getFirestore, collection, addDoc, getDocs, query, orderBy,
+  limit, doc, setDoc, getDoc
+} from 'https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js';
 
-  const firebaseConfig = {
-    apiKey: "AIzaSyAAGdLNN73Eq3MXGk00cqgSPw6t5KgY3Zk",
-    authDomain: "enhanced-swing-analyzer.firebaseapp.com",
-    projectId: "enhanced-swing-analyzer",
-    storageBucket: "enhanced-swing-analyzer.appspot.com",
-    messagingSenderId: "1091700626043",
-    appId: "1:1091700626043:web:3bd01af48ad0ef55f408de"
-  };
+const firebaseConfig = {
+  apiKey: "AIzaSyAAGdLNN73Eq3MXGk00cqgSPw6t5KgY3Zk",
+  authDomain: "enhanced-swing-analyzer.firebaseapp.com",
+  projectId: "enhanced-swing-analyzer",
+  storageBucket: "enhanced-swing-analyzer.appspot.com",
+  messagingSenderId: "1091700626043",
+  appId: "1:1091700626043:web:3bd01af48ad0ef55f408de"
+};
 
-  const app = initializeApp(firebaseConfig);
-  const auth = getAuth(app);
-  const db = getFirestore(app);
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
 
-  window._esa_firebase = { app, auth, db };
+window._esa_firebase = { app, auth, db };
 
-  // Sync status indicator
-  let syncStatusElement;
-  function updateSyncStatus(status, message) {
-    if (!syncStatusElement) {
-      syncStatusElement = document.getElementById('syncStatus');
-    }
-    if (syncStatusElement) {
-      syncStatusElement.textContent = message || status;
-      syncStatusElement.style.color = status === 'synced' ? '#16a34a' : 
-                                       status === 'syncing' ? '#f59e0b' : '#dc2626';
-    }
-  }
+/* -------------------------------------------------------
+   2. Sync Status Helper
+------------------------------------------------------- */
+let syncStatusElement;
+function updateSyncStatus(status, message) {
+  if (!syncStatusElement)
+    syncStatusElement = document.getElementById("syncStatus");
 
-  // Enhanced sync queue with timestamps
-  const SYNC_QUEUE_KEY = 'esa_sync_queue_v12';
-  const LAST_SYNC_KEY = 'esa_last_sync_v12';
-
-  function enqueueForSync(col, docObj) {
-    try {
-      const q = JSON.parse(localStorage.getItem(SYNC_QUEUE_KEY) || '[]');
-      q.push({col, docObj, ts: Date.now(), id: Date.now() + '_' + Math.random().toString(36).substr(2, 9)});
-      localStorage.setItem(SYNC_QUEUE_KEY, JSON.stringify(q));
-      console.log('📝 Enqueued for sync:', col, docObj);
-    } catch (e) { console.warn('enqueueForSync', e); }
-  }
-
-  async function flushSyncQueue(uid) {
-    if (!navigator.onLine) {
-      console.log('⚠️ Offline - sync queued');
-      updateSyncStatus('offline', '⚠️ Offline - changes queued');
-      return;
-    }
-
-    try {
-      updateSyncStatus('syncing', '🔄 Syncing...');
-      const raw = localStorage.getItem(SYNC_QUEUE_KEY);
-      if (!raw) {
-        updateSyncStatus('synced', '✅ Synced');
-        return;
-      }
-      
-      const q = JSON.parse(raw || '[]');
-      if (!q.length) {
-        updateSyncStatus('synced', '✅ Synced');
-        return;
-      }
-
-      console.log(`📤 Flushing ${q.length} items to cloud...`);
-      
-      for (const item of q) {
-  try {
-    // Use shared collection instead of per-user
-    const pathCol = `shared/${item.col}`;
-    await addDoc(collection(db, pathCol), {...item.docObj, syncedAt: Date.now()});
-    console.log('✅ Synced to SHARED:', item.col, item.docObj.symbol || item.docObj.list);
-  } catch (e) { 
-    console.warn('⚠️ Sync item failed:', e); 
-  }
+  syncStatusElement.textContent = message;
+  syncStatusElement.style.color =
+    status === "synced" ? "#16a34a" :
+    status === "syncing" ? "#f59e0b" :
+    status === "offline" ? "#dc2626" : "#dc2626";
 }
-      
-      localStorage.removeItem(SYNC_QUEUE_KEY);
-      localStorage.setItem(LAST_SYNC_KEY, Date.now().toString());
-      updateSyncStatus('synced', '✅ Synced');
-      console.log('✅ Sync complete');
-      
-      // Trigger UI refresh after sync
-      if (window.renderSavedHistory) window.renderSavedHistory();
-      if (window.renderWatchlist) window.renderWatchlist();
-      
-    } catch(e) { 
-      console.warn('flushSyncQueue error:', e); 
-      updateSyncStatus('error', '❌ Sync failed');
-    }
-  }
 
-  // Fetch cloud records with deduplication
-  async function fetchCloudList(uid, col) {
+/* -------------------------------------------------------
+   3. Local Sync Queue
+------------------------------------------------------- */
+const SYNC_QUEUE_KEY = "esa_sync_queue_v12";
+const LAST_SYNC_KEY = "esa_last_sync_v12";
+
+function enqueueForSync(col, docObj) {
+  const queue = JSON.parse(localStorage.getItem(SYNC_QUEUE_KEY) || "[]");
+  queue.push({
+    col,
+    docObj,
+    ts: Date.now(),
+    id: Date.now() + "_" + Math.random().toString(36).slice(2)
+  });
+  localStorage.setItem(SYNC_QUEUE_KEY, JSON.stringify(queue));
+}
+
+/* -------------------------------------------------------
+  4. Flush Queue → Firestore
+------------------------------------------------------- */
+async function flushSyncQueue() {
   if (!navigator.onLine) {
-    console.log('⚠️ Offline - using local data');
-    return [];
-  }
-  
-  try {
-    // Use shared collection instead of per-user
-    const pathCol = `shared/${col}`;
-    const q = query(collection(db, pathCol), orderBy('ts', 'desc'), limit(500));
-    const snap = await getDocs(q);
-    const data = snap.docs.map(d => ({id: d.id, ...d.data()}));
-    console.log(`📥 Fetched ${data.length} ${col} records from SHARED cloud`);
-    return data;
-  } catch(e) { 
-    console.warn('fetchCloudList error:', e); 
-    return []; 
-  }
-}
-
-  // Fetch and merge watchlist
-  async function fetchWatchlist(uid) {
-  if (!navigator.onLine) return [];
-  
-  try {
-    // Use shared document instead of per-user
-    const docRef = doc(db, "shared/global/settings");
-    const docSnap = await getDoc(docRef);
-    if (docSnap.exists()) {
-      const data = docSnap.data();
-      console.log('📥 Fetched watchlist from SHARED cloud:', data.list);
-      return data.list || [];
-    }
-    return [];
-  } catch(e) {
-    console.warn('fetchWatchlist error:', e);
-    return [];
-  }
-}
-
-  // Save watchlist to cloud
-  async function saveWatchlistToCloud(uid, list) {
-  if (!navigator.onLine) {
-    enqueueForSync('watchlist', {list, ts: Date.now()});
+    updateSyncStatus("offline", "⚠️ Offline – queued");
     return;
   }
-  
+
+  const raw = localStorage.getItem(SYNC_QUEUE_KEY);
+  if (!raw) return;
+
+  const queue = JSON.parse(raw || "[]");
+  if (!queue.length) {
+    updateSyncStatus("synced", "✓ Synced");
+    return;
+  }
+
+  updateSyncStatus("syncing", "🔄 Syncing...");
+
+  for (const item of queue) {
+    try {
+      const path = `shared/global/${item.col}`;
+      await addDoc(collection(db, path), {
+        ...item.docObj,
+        syncedAt: Date.now()
+      });
+    } catch (e) {
+      console.warn("sync failed", e);
+    }
+  }
+
+  localStorage.removeItem(SYNC_QUEUE_KEY);
+  localStorage.setItem(LAST_SYNC_KEY, Date.now().toString());
+  updateSyncStatus("synced", "✓ Synced");
+}
+
+/* -------------------------------------------------------
+  5. Cloud Fetch (History List)
+------------------------------------------------------- */
+async function fetchCloudList(col) {
+  if (!navigator.onLine) return [];
+
   try {
-    // Use shared document instead of per-user
-    const docRef = doc(db, "shared/global/settings");
-    await setDoc(docRef, {list, ts: Date.now(), syncedAt: Date.now()});
-    console.log('✅ Watchlist saved to SHARED cloud');
-    localStorage.setItem(LAST_SYNC_KEY, Date.now().toString());
-  } catch(e) {
-    console.warn('saveWatchlistToCloud error:', e);
-    enqueueForSync('watchlist', {list, ts: Date.now()});
+    const path = `shared/global/${col}`;
+    const q = query(collection(db, path), orderBy("ts", "desc"), limit(500));
+    const snap = await getDocs(q);
+    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  } catch (e) {
+    console.warn("fetchCloudList", e);
+    return [];
   }
 }
 
-  window.esaCloud = {
-    signIn: async () => {
-      try {
-        const userCred = await signInAnonymously(auth);
-        console.log('🔐 Signed in:', userCred.user.uid);
-        return userCred.user;
-      } catch (e) {
-        console.warn('Sign-in failed:', e);
-        return null;
-      }
-    },
-    flushSyncQueue,
-    enqueueForSync,
-    fetchCloudList,
-    fetchWatchlist,
-    saveWatchlistToCloud
-  };
+/* -------------------------------------------------------
+  6. Watchlist – Cloud
+------------------------------------------------------- */
+async function fetchWatchlist() {
+  try {
+    const docRef = doc(db, "shared/global/settings");
+    const snap = await getDoc(docRef);
+    return snap.exists() ? snap.data().list || [] : [];
+  } catch (e) {
+    console.warn("fetchWatchlist", e);
+    return [];
+  }
+}
 
-  // Auto sign-in and sync on load
-  // Auto sign-in and sync on load
+async function saveWatchlistToCloud(list) {
+  try {
+    const docRef = doc(db, "shared/global/settings");
+    await setDoc(docRef, {
+      list,
+      ts: Date.now(),
+      syncedAt: Date.now()
+    });
+  } catch (e) {
+    enqueueForSync("watchlist", { list, ts: Date.now() });
+  }
+}
+
+/* -------------------------------------------------------
+  7. Expose Cloud API
+------------------------------------------------------- */
+window.esaCloud = {
+  signIn: async () => {
+    try {
+      const userCred = await signInAnonymously(auth);
+      return userCred.user;
+    } catch (e) {
+      console.warn("signIn failed", e);
+      return null;
+    }
+  },
+  flushSyncQueue,
+  enqueueForSync,
+  fetchCloudList,
+  fetchWatchlist,
+  saveWatchlistToCloud
+};
+
+/* -------------------------------------------------------
+  8. Auth State Listener
+------------------------------------------------------- */
 onAuthStateChanged(auth, async (user) => {
-  if (user) {
-    console.log('🔐 Auth state: signed in', user.uid);
-    updateSyncStatus('syncing', '🔄 Syncing...');
-    
-    // Initial sync on load
-    await flushSyncQueue(user.uid);
-    
-    // Wait for functions to be available, then fetch and render
-    const waitForFunctions = setInterval(async () => {
-      if (window.getSavedHistoryHybrid && window.getWatchlistHybrid) {
-        clearInterval(waitForFunctions);
-        
-        console.log('🔄 Loading data from cloud...');
-        await window.getSavedHistoryHybrid();
-        await window.getWatchlistHybrid();
-        
-        // Force render after load
-        if (window.renderSavedHistory) window.renderSavedHistory();
-        if (window.renderWatchlist) window.renderWatchlist();
-        
-        console.log('✅ Data loaded and rendered');
-      }
-    }, 100);
-    
-    // Timeout after 5 seconds
-    setTimeout(() => clearInterval(waitForFunctions), 5000);
-    
-    updateSyncStatus('synced', '✅ Synced');
-    } else {
-      console.log('🔓 Not signed in, attempting...');
-      updateSyncStatus('syncing', '🔄 Connecting...');
-      const u = await window.esaCloud.signIn();
-      if (u) {
-        await flushSyncQueue(u.uid);
-        updateSyncStatus('synced', '✅ Synced');
-      } else {
-        updateSyncStatus('offline', '⚠️ Offline mode');
-      }
-    }
-  });
+  if (!user) {
+    const u = await window.esaCloud.signIn();
+    if (!u) return updateSyncStatus("offline", "⚠️ Offline");
 
-  // Periodic sync every 30 seconds
-  setInterval(async () => {
-    const auth = window._esa_firebase?.auth;
-    if (auth?.currentUser && navigator.onLine) {
-      await flushSyncQueue(auth.currentUser.uid);
-    }
-  }, 30000);
+    await flushSyncQueue();
+    updateSyncStatus("synced", "✓ Synced");
+    return;
+  }
 
-  // Sync on coming back online
-  window.addEventListener('online', async () => {
-    console.log('🌐 Back online - syncing...');
-    const auth = window._esa_firebase?.auth;
-    if (auth?.currentUser) {
-      await flushSyncQueue(auth.currentUser.uid);
-    }
-  });
+  updateSyncStatus("syncing", "🔄 Syncing...");
+  await flushSyncQueue();
+  updateSyncStatus("synced", "✓ Synced");
 
-  window.addEventListener('offline', () => {
-    console.log('📴 Offline - changes will be queued');
-    updateSyncStatus('offline', '⚠️ Offline - changes queued');
-  });
+  // Trigger UI refresh
+  if (window.getSavedHistoryHybrid) window.getSavedHistoryHybrid();
+  if (window.getWatchlistHybrid) window.getWatchlistHybrid();
+});
+
+/* -------------------------------------------------------
+  9. Auto Sync (every 30 sec + online)
+------------------------------------------------------- */
+setInterval(async () => {
+  if (auth.currentUser && navigator.onLine) {
+    await flushSyncQueue();
+  }
+}, 30000);
+
+window.addEventListener("online", async () => {
+  await flushSyncQueue();
+});
+
+/* -------------------------------------------------------
+  END Firebase Module
+------------------------------------------------------- */
 </script>
+
 
 <!-- PDF libs -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
